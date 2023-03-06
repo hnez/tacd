@@ -278,14 +278,6 @@ export default function DashboardDut() {
                 return `${obj.lss_state} / ${can_ok}`;
               }}
             />
-            <Box variant="awsui-key-label">Web Interface</Box>
-            <Link
-              external
-              externalIconAriaLabel="Opens in a new tab"
-              href={`http://${window.location.hostname}:8080/`}
-            >
-              IOBus Server Webinterface
-            </Link>
           </SpaceBetween>
           <SpaceBetween key="iobus-r" size="l">
             <MqttBarMeter

@@ -113,19 +113,6 @@ export default function ApiDocs() {
       </Header>
 
       <SwaggerView />
-
-      <Form
-        actions={
-          <Button
-            iconName="download"
-            href={OPENAPI_URL}
-            variant="link"
-            formAction="none"
-          >
-            Download OpenAPI specification
-          </Button>
-        }
-      />
     </SpaceBetween>
   );
 }
