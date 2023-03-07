@@ -59,6 +59,7 @@ stub_out_evdev = []
 stub_out_fs = []
 stub_out_gpio = []
 stub_out_hwmon = []
+stub_out_regulator = []
 stub_out_root = []
 stub_out_usb_hub = []
 stub_out_everything = [
@@ -70,6 +71,7 @@ stub_out_everything = [
   "stub_out_fs",
   "stub_out_gpio",
   "stub_out_hwmon",
+  "stub_out_regulator",
   "stub_out_root",
   "stub_out_usb_hub",
 ]
