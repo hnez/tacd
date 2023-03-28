@@ -164,34 +164,59 @@ impl MountableScreen for SystemScreen {
             while let Some(ev) = button_events.next().await {
                 let action = action_highlight.get().await;
 
-                match ev {
-                    ButtonEvent::Release {
-                        btn: Button::Lower,
-                        dur: PressDuration::Long,
-                    } => match action {
-                        Action::ToggleSetupMode => {
-                            setup_mode.modify(|prev| Some(!prev.unwrap_or(true))).await
-                        }
-                        Action::Reboot => screen.set(Screen::RebootConfirm).await,
-                    },
-                    ButtonEvent::Release {
-                        btn: Button::Lower,
-                        dur: PressDuration::Short,
-                    } => {
-                        action_highlight
-                            .set(match action {
-                                Action::ToggleSetupMode => Action::Reboot,
-                                Action::Reboot => Action::ToggleSetupMode,
-                            })
-                            .await;
-                    }
-                    ButtonEvent::Release {
-                        btn: Button::Upper,
-                        dur: _,
-                    } => {
+                match (ev, action) {
+                    (
+                        ButtonEvent::Release {
+                            btn: Button::Lower,
+                            dur: PressDuration::Long,
+                            loc: Location::Local,
+                        },
+                        Action::ToggleSetupMode,
+                    ) => setup_mode.modify(|prev| Some(!prev.unwrap_or(true))).await,
+                    (
+                        ButtonEvent::Release {
+                            btn: Button::Lower,
+                            dur: PressDuration::Long,
+                            loc: Location::Web,
+                        },
+                        Action::ToggleSetupMode,
+                    ) => { /* Not allowed*/ }
+                    (
+                        ButtonEvent::Release {
+                            btn: Button::Lower,
+                            dur: PressDuration::Long,
+                            loc: _,
+                        },
+                        Action::Reboot,
+                    ) => screen.set(Screen::RebootConfirm).await,
+                    (
+                        ButtonEvent::Release {
+                            btn: Button::Lower,
+                            dur: PressDuration::Short,
+                            loc: _,
+                        },
+                        Action::ToggleSetupMode,
+                    ) => action_highlight.set(Action::Reboot).await,
+
+                    (
+                        ButtonEvent::Release {
+                            btn: Button::Lower,
+                            dur: PressDuration::Short,
+                            loc: _,
+                        },
+                        Action::Reboot,
+                    ) => action_highlight.set(Action::ToggleSetupMode).await,
+                    (
+                        ButtonEvent::Release {
+                            btn: Button::Upper,
+                            dur: _,
+                            loc: _,
+                        },
+                        _,
+                    ) => {
                         screen.set(SCREEN_TYPE.next()).await;
                     }
-                    _ => {}
+                    (ButtonEvent::Press { btn: _, loc: _ }, _) => {}
                 }
             }
         });

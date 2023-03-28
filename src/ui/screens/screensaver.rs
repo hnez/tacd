@@ -178,10 +178,12 @@ impl MountableScreen for ScreenSaverScreen {
                     ButtonEvent::Release {
                         btn: Button::Lower,
                         dur: _,
+                        loc: _,
                     } => locator.modify(|prev| Some(!prev.unwrap_or(false))).await,
                     ButtonEvent::Release {
                         btn: Button::Upper,
                         dur: _,
+                        loc: _,
                     } => screen.set(SCREEN_TYPE.next()).await,
                     _ => {}
                 }

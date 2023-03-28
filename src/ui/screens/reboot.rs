@@ -93,12 +93,13 @@ impl MountableScreen for RebootConfirmScreen {
                     ButtonEvent::Release {
                         btn: Button::Lower,
                         dur: PressDuration::Long,
+                        loc: _,
                     } => {
                         brb(&mut *draw_target.lock().await);
                         reboot.set(true).await;
                         break;
                     }
-                    ButtonEvent::Press { btn: _ } => {}
+                    ButtonEvent::Press { btn: _, loc: _ } => {}
                     _ => screen.set(SCREEN_TYPE.next()).await,
                 }
             }

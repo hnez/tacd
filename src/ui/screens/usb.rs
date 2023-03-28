@@ -172,20 +172,23 @@ impl MountableScreen for UsbScreen {
                     ButtonEvent::Release {
                         btn: Button::Lower,
                         dur: PressDuration::Long,
+                        loc: _,
                     } => {
                         port.modify(|prev| Some(!prev.unwrap_or(true))).await;
                     }
                     ButtonEvent::Release {
                         btn: Button::Lower,
                         dur: PressDuration::Short,
+                        loc: _,
                     } => {
                         port_highlight.set((highlighted + 1) % 3).await;
                     }
                     ButtonEvent::Release {
                         btn: Button::Upper,
                         dur: _,
+                        loc: _,
                     } => screen.set(SCREEN_TYPE.next()).await,
-                    ButtonEvent::Press { btn: _ } => {}
+                    ButtonEvent::Press { btn: _, loc: _ } => {}
                 }
             }
         });

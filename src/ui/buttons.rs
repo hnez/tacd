@@ -85,15 +85,42 @@ impl PressDuration {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub enum Location {
+    Local,
+    Web,
+}
+
+impl Default for Location {
+    fn default() -> Self {
+        // There are certain actions that we only allow when they are performed
+        // on the local ui of the device, not from the web interface.
+        // E.g. going back to setup mode.
+        // This together with serde(skip) prevents the web ui from
+        // ever being able to simulate a local button press.
+        Location::Web
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum ButtonEvent {
-    Press { btn: Button },
-    Release { btn: Button, dur: PressDuration },
+    Press {
+        btn: Button,
+        #[serde(skip)]
+        loc: Location,
+    },
+    Release {
+        btn: Button,
+        dur: PressDuration,
+        #[serde(skip)]
+        loc: Location,
+    },
 }
 
 impl ButtonEvent {
     fn press_from_id(id: usize) -> Self {
         ButtonEvent::Press {
             btn: Button::from_id(id),
+            loc: Location::Local,
         }
     }
 
@@ -101,6 +128,7 @@ impl ButtonEvent {
         ButtonEvent::Release {
             btn: Button::from_id(id),
             dur: PressDuration::from_duration(duration),
+            loc: Location::Local,
         }
     }
 }
