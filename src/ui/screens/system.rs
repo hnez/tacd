@@ -16,21 +16,30 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 use async_std::prelude::*;
+use async_std::sync::Arc;
 use async_std::task::spawn;
 use async_trait::async_trait;
-
 use embedded_graphics::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use super::buttons::*;
 use super::widgets::*;
-use super::{draw_border, MountableScreen, Screen, Ui};
-use crate::broker::{Native, SubscriptionHandle};
+use super::{draw_border, row_anchor, MountableScreen, Screen, Ui};
+use crate::broker::{Native, SubscriptionHandle, Topic};
 use crate::dbus::networkmanager::LinkInfo;
 use crate::measurement::Measurement;
 
 const SCREEN_TYPE: Screen = Screen::System;
+const OFFSET_INDICATOR: Point = Point::new(150, -10);
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+enum Action {
+    ToggleSetupMode,
+    Reboot,
+}
 
 pub struct SystemScreen {
+    highlighted: Arc<Topic<Action>>,
     widgets: Vec<Box<dyn AnyWidget>>,
     buttons_handle: Option<SubscriptionHandle<ButtonEvent, Native>>,
 }
@@ -38,6 +47,7 @@ pub struct SystemScreen {
 impl SystemScreen {
     pub fn new() -> Self {
         Self {
+            highlighted: Topic::anonymous(Some(Action::ToggleSetupMode)),
             widgets: Vec::new(),
             buttons_handle: None,
         }
@@ -61,7 +71,7 @@ impl MountableScreen for SystemScreen {
             DynamicWidget::text(
                 ui.res.temperatures.soc_temperature.clone(),
                 ui.draw_target.clone(),
-                Point::new(8, 52),
+                row_anchor(0),
                 Box::new(|meas: &Measurement| format!("SoC:    {:.0}C", meas.value)),
             )
             .await,
@@ -71,7 +81,7 @@ impl MountableScreen for SystemScreen {
             DynamicWidget::text(
                 ui.res.network.uplink_interface.clone(),
                 ui.draw_target.clone(),
-                Point::new(8, 72),
+                row_anchor(1),
                 Box::new(|info: &LinkInfo| match info.carrier {
                     true => format!("Uplink: {}MBit/s", info.speed),
                     false => "Uplink: Down".to_string(),
@@ -84,7 +94,7 @@ impl MountableScreen for SystemScreen {
             DynamicWidget::text(
                 ui.res.network.dut_interface.clone(),
                 ui.draw_target.clone(),
-                Point::new(8, 92),
+                row_anchor(2),
                 Box::new(|info: &LinkInfo| match info.carrier {
                     true => format!("DUT:    {}MBit/s", info.speed),
                     false => "DUT:    Down".to_string(),
@@ -97,7 +107,7 @@ impl MountableScreen for SystemScreen {
             DynamicWidget::text(
                 ui.res.network.bridge_interface.clone(),
                 ui.draw_target.clone(),
-                Point::new(8, 112),
+                row_anchor(3),
                 Box::new(|ips: &Vec<String>| {
                     let ip = ips.get(0).map(|s| s.as_str()).unwrap_or("-");
                     format!("IP:     {}", ip)
@@ -106,21 +116,82 @@ impl MountableScreen for SystemScreen {
             .await,
         ));
 
+        self.widgets.push(Box::new(
+            DynamicWidget::text(
+                self.highlighted.clone(),
+                ui.draw_target.clone(),
+                row_anchor(5),
+                Box::new(|action| match action {
+                    Action::ToggleSetupMode => "> Setup Mode".into(),
+                    Action::Reboot => "  Setup Mode".into(),
+                }),
+            )
+            .await,
+        ));
+
+        self.widgets.push(Box::new(
+            DynamicWidget::indicator(
+                ui.res.setup_mode.setup_mode.clone(),
+                ui.draw_target.clone(),
+                row_anchor(5) + OFFSET_INDICATOR,
+                Box::new(|state: &bool| match *state {
+                    true => IndicatorState::On,
+                    false => IndicatorState::Off,
+                }),
+            )
+            .await,
+        ));
+
+        self.widgets.push(Box::new(
+            DynamicWidget::text(
+                self.highlighted.clone(),
+                ui.draw_target.clone(),
+                row_anchor(6),
+                Box::new(|action| match action {
+                    Action::ToggleSetupMode => "  Reboot".into(),
+                    Action::Reboot => "> Reboot".into(),
+                }),
+            )
+            .await,
+        ));
+
         let (mut button_events, buttons_handle) = ui.buttons.clone().subscribe_unbounded().await;
+        let action_highlight = self.highlighted.clone();
+        let setup_mode = ui.res.setup_mode.setup_mode.clone();
         let screen = ui.screen.clone();
 
         spawn(async move {
             while let Some(ev) = button_events.next().await {
+                let action = action_highlight.get().await;
+
                 match ev {
                     ButtonEvent::Release {
                         btn: Button::Lower,
-                        dur: _,
-                    } => screen.set(Screen::RebootConfirm).await,
+                        dur: PressDuration::Long,
+                    } => match action {
+                        Action::ToggleSetupMode => {
+                            setup_mode.modify(|prev| Some(!prev.unwrap_or(true))).await
+                        }
+                        Action::Reboot => screen.set(Screen::RebootConfirm).await,
+                    },
+                    ButtonEvent::Release {
+                        btn: Button::Lower,
+                        dur: PressDuration::Short,
+                    } => {
+                        action_highlight
+                            .set(match action {
+                                Action::ToggleSetupMode => Action::Reboot,
+                                Action::Reboot => Action::ToggleSetupMode,
+                            })
+                            .await;
+                    }
                     ButtonEvent::Release {
                         btn: Button::Upper,
                         dur: _,
-                    } => screen.set(SCREEN_TYPE.next()).await,
-                    ButtonEvent::Press { btn: _ } => {}
+                    } => {
+                        screen.set(SCREEN_TYPE.next()).await;
+                    }
+                    _ => {}
                 }
             }
         });
