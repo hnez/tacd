@@ -124,7 +124,7 @@ async fn main() -> Result<(), std::io::Error> {
 
     // Consume the BrokerBuilder (no further topics can be added or removed)
     // and expose the topics via HTTP and MQTT-over-websocket.
-    bb.build(&mut http_server.server);
+    bb.build(&mut http_server.server).await;
 
     log::info!("Setup complete. Handling requests");
 

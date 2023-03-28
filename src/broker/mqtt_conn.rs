@@ -290,8 +290,10 @@ async fn handle_connection(
                         // Subscribe to the serialized messages via the broker
                         // framework. This uses a single queue per connection for
                         // all topics.
-                        let sub_handle =
-                            topic.clone().subscribe_as_bytes(to_websocket.clone()).await;
+                        let sub_handle = topic
+                            .clone()
+                            .subscribe_as_bytes(to_websocket.clone(), true)
+                            .await;
 
                         new_subscribes.push(sub_handle);
                     }

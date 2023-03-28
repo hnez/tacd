@@ -91,6 +91,7 @@ pub struct Topic<E> {
     path: TopicName,
     web_readable: bool,
     web_writable: bool,
+    persistent: bool,
     retained_length: usize,
     inner: Mutex<TopicInner<E>>,
 }
@@ -155,6 +156,7 @@ impl<E: Serialize + DeserializeOwned + Clone> Topic<E> {
         path: &str,
         web_readable: bool,
         web_writable: bool,
+        persistent: bool,
         initial: Option<E>,
         retained_length: usize,
     ) -> Self {
@@ -166,6 +168,7 @@ impl<E: Serialize + DeserializeOwned + Clone> Topic<E> {
             path,
             web_readable,
             web_writable,
+            persistent,
             retained_length,
             inner,
         }
@@ -323,10 +326,12 @@ pub trait AnyTopic: Sync + Send {
     fn path(&self) -> &TopicName;
     fn web_readable(&self) -> bool;
     fn web_writable(&self) -> bool;
+    fn persistent(&self) -> bool;
     async fn set_from_bytes(&self, msg: &[u8]) -> serde_json::Result<()>;
     async fn subscribe_as_bytes(
         self: Arc<Self>,
         sender: Sender<(TopicName, Arc<[u8]>)>,
+        enqueue_retained: bool,
     ) -> Box<dyn AnySubscriptionHandle>;
     async fn try_get_as_bytes(&self) -> Option<Arc<[u8]>>;
 }
@@ -343,6 +348,10 @@ impl<E: Serialize + DeserializeOwned + Send + Sync + Clone + 'static> AnyTopic f
 
     fn web_writable(&self) -> bool {
         self.web_writable
+    }
+
+    fn persistent(&self) -> bool {
+        self.persistent
     }
 
     /// De-Serialize a message and set the topic to the resulting value
@@ -363,27 +372,31 @@ impl<E: Serialize + DeserializeOwned + Send + Sync + Clone + 'static> AnyTopic f
     /// # Arguments:
     ///
     /// * `sender` - The sender side of the queue to add
+    /// * `enqueue_retained` - whether to enqueue the currently retained values
     async fn subscribe_as_bytes(
         self: Arc<Self>,
         sender: Sender<(TopicName, Arc<[u8]>)>,
+        enqueue_retained: bool,
     ) -> Box<dyn AnySubscriptionHandle> {
         let mut inner = self.inner.lock().await;
         let token = Unique::new();
         let mut should_add = true;
 
-        // If there are retained values try to enqueue them right away.
-        // It that fails mimic what set_arc_with_retain_lock would do.
-        for val in inner.retained.iter_mut() {
-            match sender.try_send((self.path.clone(), val.serialized())) {
-                Ok(_) => {}
-                Err(TrySendError::Full(_)) => {
-                    sender.close();
-                    should_add = false;
-                    break;
-                }
-                Err(TrySendError::Closed(_)) => {
-                    should_add = false;
-                    break;
+        if enqueue_retained {
+            // If there are retained values try to enqueue them right away.
+            // It that fails mimic what set_arc_with_retain_lock would do.
+            for val in inner.retained.iter_mut() {
+                match sender.try_send((self.path.clone(), val.serialized())) {
+                    Ok(_) => {}
+                    Err(TrySendError::Full(_)) => {
+                        sender.close();
+                        should_add = false;
+                        break;
+                    }
+                    Err(TrySendError::Closed(_)) => {
+                        should_add = false;
+                        break;
+                    }
                 }
             }
         }
@@ -430,7 +443,7 @@ mod tests {
     }
 
     fn new_topic<E: Serialize + DeserializeOwned + Clone>() -> Arc<Topic<E>> {
-        Arc::new(Topic::new("/", true, true, None, 1))
+        Arc::new(Topic::new("/", true, true, true, None, 1))
     }
 
     fn collect_native<E: Clone>(recv: Receiver<E>) -> Vec<E> {
@@ -462,17 +475,17 @@ mod tests {
 
             let (ser_1, ser_handle_1) = {
                 let (tx, rx) = unbounded();
-                (rx, topic.clone().subscribe_as_bytes(tx).await)
+                (rx, topic.clone().subscribe_as_bytes(tx, true).await)
             };
 
             let (ser_2, ser_handle_2) = {
                 let (tx, rx) = unbounded();
-                (rx, topic.clone().subscribe_as_bytes(tx).await)
+                (rx, topic.clone().subscribe_as_bytes(tx, true).await)
             };
 
             let (ser_3, ser_handle_3) = {
                 let (tx, rx) = unbounded();
-                (rx, topic.clone().subscribe_as_bytes(tx).await)
+                (rx, topic.clone().subscribe_as_bytes(tx, true).await)
             };
 
             assert_eq!(topic.inner.lock().await.senders.len(), 3);
