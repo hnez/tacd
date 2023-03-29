@@ -124,7 +124,7 @@ async fn draw_border(text: &str, screen: Screen, draw_target: &Arc<Mutex<Framebu
         .unwrap();
 }
 
-fn row_anchor(row_num: u8) -> Point {
+const fn row_anchor(row_num: u8) -> Point {
     assert!(row_num < 8);
 
     Point::new(8, 52 + (row_num as i32) * 20)
