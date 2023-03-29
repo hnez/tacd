@@ -16,71 +16,68 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 use std::fs::{create_dir, rename, File};
-use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use async_std::channel::{unbounded, Receiver};
 use async_std::prelude::*;
 use async_std::sync::Arc;
 use async_std::task::spawn;
-use log::info;
+use log::{error, info};
+use serde::{Deserialize, Serialize};
+use serde_json::{from_reader, to_writer_pretty, Map, Value};
 
 use super::{AnyTopic, TopicName};
 
 #[cfg(feature = "demo_mode")]
-const PERSISTENCE_PATH: &str = "demo_files/srv/tacd/persistent_topics";
+const PERSISTENCE_PATH: &str = "demo_files/srv/tacd/state.json";
 
 #[cfg(not(feature = "demo_mode"))]
-const PERSISTENCE_PATH: &str = "/srv/tacd/persistent_topics";
+const PERSISTENCE_PATH: &str = "/srv/tacd/state.json";
+
+#[derive(Serialize, Deserialize)]
+struct PersistenceFile {
+    format_version: u64,
+    persistent_topics: Map<String, Value>,
+}
 
 async fn load(topics: &[Arc<dyn AnyTopic>]) -> Result<()> {
     let path = Path::new(PERSISTENCE_PATH);
 
     if !path.is_file() {
         info!(
-            "Persistence file at \"{}\" does not yet exist. Using defaults",
+            "State file at \"{}\" does not yet exist. Using defaults",
             PERSISTENCE_PATH
         );
         return Ok(());
     }
 
-    let mut fd = BufReader::new(File::open(path)?);
+    let file: PersistenceFile = from_reader(File::open(path)?)?;
 
-    loop {
-        let (topic_name, value) = {
-            let mut topic_name = Vec::new();
-            let mut value = Vec::new();
-
-            fd.read_until(b' ', &mut topic_name)?;
-
-            if topic_name.is_empty() {
-                break Ok(());
-            }
-
-            if topic_name.pop() != Some(b' ') {
-                break Err(anyhow!("Persistent topic file ended unexpectedly"));
-            }
-
-            fd.read_until(b'\n', &mut value)?;
-
-            if value.last() == Some(&b'\n') {
-                value.pop();
-            }
-
-            (topic_name, value)
-        };
-
-        let topic = topics
-            .iter()
-            .find(|t| t.persistent() && t.path().as_bytes() == topic_name)
-            .ok_or_else(|| {
-                let topic_name = String::from_utf8_lossy(&topic_name);
-                anyhow!("Could not find persistent topic \"{topic_name}\"")
-            })?;
-
-        topic.set_from_bytes(&value).await?
+    if file.format_version != 1 {
+        bail!("Unkown state file version: {}", file.format_version);
     }
+
+    let mut content = file.persistent_topics;
+
+    for topic in topics.iter().filter(|t| t.persistent()) {
+        let path: &str = topic.path();
+
+        if let Some(value) = content.remove(path) {
+            topic.set_from_json_value(value).await?;
+        }
+    }
+
+    if !content.is_empty() {
+        error!("State file contained extra keys:");
+        for topic_name in content.keys() {
+            error!(" - {topic_name}");
+        }
+
+        bail!("Left over topics in state file");
+    }
+
+    Ok(())
 }
 
 async fn save_on_change(
@@ -94,6 +91,30 @@ async fn save_on_change(
             "Persistent topic \"{}\" has changed. Saving to disk",
             topic_name
         );
+
+        let persistent_topics = {
+            let mut map = Map::new();
+
+            for topic in topics.iter().filter(|t| t.persistent()) {
+                let key = topic.path().to_string();
+                let value = topic.try_get_json_value().await;
+
+                if let Some(value) = value {
+                    if map.insert(key, value).is_some() {
+                        let name: &str = topic.path();
+                        error!("Duplicate persistent topic: \"{name}\"");
+                        // continue anyways
+                    }
+                }
+            }
+
+            map
+        };
+
+        let file_contents = PersistenceFile {
+            format_version: 1,
+            persistent_topics,
+        };
 
         let path = Path::new(PERSISTENCE_PATH);
         let parent = path.parent().unwrap();
@@ -109,21 +130,12 @@ async fn save_on_change(
         }
 
         {
-            let mut fd = File::create(&path_tmp)?;
-
-            for topic in topics.iter().filter(|t| t.persistent()) {
-                if let Some(value) = topic.try_get_as_bytes().await {
-                    fd.write_all(topic.path().as_bytes())?;
-                    fd.write_all(b" ")?;
-                    fd.write_all(&value)?;
-                    fd.write_all(b"\n")?;
-                }
-            }
-
-            fd.sync_all()?
+            let fd = File::create(&path_tmp)?;
+            to_writer_pretty(&fd, &file_contents)?;
+            fd.sync_all()?;
         }
 
-        rename(path_tmp, path)?
+        rename(path_tmp, path)?;
     }
 
     Ok(())

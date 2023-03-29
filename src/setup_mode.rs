@@ -19,7 +19,9 @@ use std::fs::{create_dir_all, read, write};
 use std::io::ErrorKind;
 use std::path::Path;
 
+use async_std::prelude::*;
 use async_std::sync::Arc;
+use async_std::task::spawn;
 use tide::{http::mime, Request, Response, Server};
 
 use crate::broker::{BrokerBuilder, Topic};
@@ -103,11 +105,32 @@ impl SetupMode {
         });
     }
 
+    fn handle_leave_requests(&self, bb: &mut BrokerBuilder) {
+        // Use the "register a read-only and a write-only topic with the same name
+        // to perform validation" trick that is also used with the DUT power endpoint.
+        // We must make sure that a client from the web can only ever trigger _leaving_
+        // the setup mode, as they would otherwise be able to take over the TAC.
+        let leave_request_topic = bb.topic_wo::<bool>("/v1/tac/setup_mode", None);
+        let setup_mode = self.setup_mode.clone();
+
+        spawn(async move {
+            let (mut leave_requests, _) = leave_request_topic.subscribe_unbounded().await;
+
+            while let Some(lr) = leave_requests.next().await {
+                if !lr {
+                    // Only ever set the setup mode to false in here
+                    setup_mode.set(false).await
+                }
+            }
+        });
+    }
+
     pub fn new(bb: &mut BrokerBuilder, server: &mut Server<()>) -> Self {
         let this = Self {
             setup_mode: bb.topic("/v1/tac/setup_mode", true, false, true, Some(true), 1),
         };
 
+        this.handle_leave_requests(bb);
         this.expose_file_conditionally(server, AUTHORIZED_KEYS_PATH, "/v1/tac/ssh/authorized_keys");
 
         this

@@ -77,9 +77,10 @@ config.moduleUrl = function (name: string, component?: string) {
 type ConfigEditorProps = {
   path: string;
   language: CodeEditorProps.Language;
+  defaultContent?: string;
 };
 
-function ConfigEditor(props: ConfigEditorProps) {
+export function ConfigEditor(props: ConfigEditorProps) {
   const [preferences, setPreferences] = useState<
     CodeEditorProps.Preferences | undefined
   >(undefined);
@@ -88,9 +89,13 @@ function ConfigEditor(props: ConfigEditorProps) {
   const [newContent, setNewContent] = useState<string | undefined>();
 
   function loadContent() {
-    fetch(props.path)
-      .then((response) => response.text())
-      .then((text) => setContent(text));
+    fetch(props.path).then((response) => {
+      if (response.ok) {
+        response.text().then((text) => setContent(text));
+      } else {
+        setContent(props.defaultContent || "");
+      }
+    });
   }
 
   useEffect(() => {
@@ -155,6 +160,115 @@ type ServiceStatus = {
   active_exit_ts: number;
 };
 
+export function LabgridService() {
+  return (
+    <Form
+      actions={
+        <SpaceBetween size="xs" direction="horizontal">
+          <MqttButton
+            iconName="status-positive"
+            topic="/v1/tac/service/labgrid-exporter/action"
+            send={"Start"}
+          >
+            Start
+          </MqttButton>
+          <MqttButton
+            iconName="status-stopped"
+            topic="/v1/tac/service/labgrid-exporter/action"
+            send={"Stop"}
+          >
+            Stop
+          </MqttButton>
+          <MqttButton
+            iconName="refresh"
+            topic="/v1/tac/service/labgrid-exporter/action"
+            send={"Restart"}
+          >
+            Restart
+          </MqttButton>
+        </SpaceBetween>
+      }
+    >
+      <SpaceBetween size="m">
+        <ColumnLayout columns={3} variant="text-grid">
+          <Box>
+            <Box variant="awsui-key-label">Service Status</Box>
+            <MqttBox
+              topic="/v1/tac/service/labgrid-exporter/status"
+              format={(state: ServiceStatus) => {
+                return `${state.active_state} (${state.sub_state})`;
+              }}
+            />
+          </Box>
+          <Box>
+            <Box variant="awsui-key-label">Last Started</Box>
+            <MqttBox
+              topic="/v1/tac/service/labgrid-exporter/status"
+              format={(state: ServiceStatus) => {
+                if (state.active_enter_ts !== 0) {
+                  let date = new Date(state.active_enter_ts / 1000);
+                  return date.toLocaleString();
+                } else {
+                  return "never";
+                }
+              }}
+            />
+          </Box>
+          <Box>
+            <Box variant="awsui-key-label">Last Stopped</Box>
+            <MqttBox
+              topic="/v1/tac/service/labgrid-exporter/status"
+              format={(state: ServiceStatus) => {
+                if (state.active_exit_ts !== 0) {
+                  let date = new Date(state.active_exit_ts / 1000);
+                  return date.toLocaleString();
+                } else {
+                  return "never";
+                }
+              }}
+            />
+          </Box>
+        </ColumnLayout>
+        <JournalView
+          history_len={20}
+          rows={20}
+          unit="labgrid-exporter.service"
+        />
+      </SpaceBetween>
+    </Form>
+  );
+}
+
+export function LabgridConfig() {
+  return (
+    <Tabs
+      tabs={[
+        {
+          label: "User Config",
+          id: "user",
+          content: (
+            <ConfigEditor path="/v1/labgrid/userconfig" language="yaml" />
+          ),
+        },
+        {
+          label: "Environment",
+          id: "env",
+          content: (
+            <ConfigEditor path="/v1/labgrid/environment" language="sh" />
+          ),
+        },
+        {
+          label: "System Config",
+          id: "system",
+          content: (
+            <ConfigEditor path="v1/labgrid/configuration" language="yaml" />
+          ),
+        },
+      ]}
+    />
+  );
+}
+
 export default function SettingsLabgrid() {
   return (
     <SpaceBetween size="m">
@@ -172,80 +286,7 @@ export default function SettingsLabgrid() {
           </Header>
         }
       >
-        <Form
-          actions={
-            <SpaceBetween size="xs" direction="horizontal">
-              <MqttButton
-                iconName="status-positive"
-                topic="/v1/tac/service/labgrid-exporter/action"
-                send={"Start"}
-              >
-                Start
-              </MqttButton>
-              <MqttButton
-                iconName="status-stopped"
-                topic="/v1/tac/service/labgrid-exporter/action"
-                send={"Stop"}
-              >
-                Stop
-              </MqttButton>
-              <MqttButton
-                iconName="refresh"
-                topic="/v1/tac/service/labgrid-exporter/action"
-                send={"Restart"}
-              >
-                Restart
-              </MqttButton>
-            </SpaceBetween>
-          }
-        >
-          <SpaceBetween size="m">
-            <ColumnLayout columns={3} variant="text-grid">
-              <Box>
-                <Box variant="awsui-key-label">Service Status</Box>
-                <MqttBox
-                  topic="/v1/tac/service/labgrid-exporter/status"
-                  format={(state: ServiceStatus) => {
-                    return `${state.active_state} (${state.sub_state})`;
-                  }}
-                />
-              </Box>
-              <Box>
-                <Box variant="awsui-key-label">Last Started</Box>
-                <MqttBox
-                  topic="/v1/tac/service/labgrid-exporter/status"
-                  format={(state: ServiceStatus) => {
-                    if (state.active_enter_ts !== 0) {
-                      let date = new Date(state.active_enter_ts / 1000);
-                      return date.toLocaleString();
-                    } else {
-                      return "never";
-                    }
-                  }}
-                />
-              </Box>
-              <Box>
-                <Box variant="awsui-key-label">Last Stopped</Box>
-                <MqttBox
-                  topic="/v1/tac/service/labgrid-exporter/status"
-                  format={(state: ServiceStatus) => {
-                    if (state.active_exit_ts !== 0) {
-                      let date = new Date(state.active_exit_ts / 1000);
-                      return date.toLocaleString();
-                    } else {
-                      return "never";
-                    }
-                  }}
-                />
-              </Box>
-            </ColumnLayout>
-            <JournalView
-              history_len={20}
-              rows={20}
-              unit="labgrid-exporter.service"
-            />
-          </SpaceBetween>
-        </Form>
+        <LabgridService />
       </Container>
 
       <Container
@@ -255,31 +296,7 @@ export default function SettingsLabgrid() {
           </Header>
         }
       >
-        <Tabs
-          tabs={[
-            {
-              label: "User Config",
-              id: "user",
-              content: (
-                <ConfigEditor path="/v1/labgrid/userconfig" language="yaml" />
-              ),
-            },
-            {
-              label: "Environment",
-              id: "env",
-              content: (
-                <ConfigEditor path="/v1/labgrid/environment" language="sh" />
-              ),
-            },
-            {
-              label: "System Config",
-              id: "system",
-              content: (
-                <ConfigEditor path="v1/labgrid/configuration" language="yaml" />
-              ),
-            },
-          ]}
-        />
+        <LabgridConfig />
       </Container>
     </SpaceBetween>
   );

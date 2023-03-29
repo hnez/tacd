@@ -125,8 +125,8 @@ impl MountableScreen for IoBusScreen {
                 ui.draw_target.clone(),
                 row_anchor(2) + OFFSET_INDICATOR,
                 Box::new(|state: &bool| match *state {
-                    true => IndicatorState::On,
-                    false => IndicatorState::Error,
+                    true => IndicatorState::Error,
+                    false => IndicatorState::Off,
                 }),
             )
             .await,

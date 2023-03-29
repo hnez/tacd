@@ -19,7 +19,6 @@ use async_std::prelude::*;
 use async_std::sync::Arc;
 use async_std::task::spawn;
 use async_trait::async_trait;
-use embedded_graphics::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::buttons::*;
@@ -30,12 +29,22 @@ use crate::dbus::networkmanager::LinkInfo;
 use crate::measurement::Measurement;
 
 const SCREEN_TYPE: Screen = Screen::System;
-const OFFSET_INDICATOR: Point = Point::new(150, -10);
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 enum Action {
-    ToggleSetupMode,
     Reboot,
+    Help,
+    SetupMode,
+}
+
+impl Action {
+    fn next(&self) -> Self {
+        match self {
+            Self::Reboot => Self::Help,
+            Self::Help => Self::SetupMode,
+            Self::SetupMode => Self::Reboot,
+        }
+    }
 }
 
 pub struct SystemScreen {
@@ -47,7 +56,7 @@ pub struct SystemScreen {
 impl SystemScreen {
     pub fn new() -> Self {
         Self {
-            highlighted: Topic::anonymous(Some(Action::ToggleSetupMode)),
+            highlighted: Topic::anonymous(Some(Action::Reboot)),
             widgets: Vec::new(),
             buttons_handle: None,
         }
@@ -122,21 +131,8 @@ impl MountableScreen for SystemScreen {
                 ui.draw_target.clone(),
                 row_anchor(5),
                 Box::new(|action| match action {
-                    Action::ToggleSetupMode => "> Setup Mode".into(),
-                    Action::Reboot => "  Setup Mode".into(),
-                }),
-            )
-            .await,
-        ));
-
-        self.widgets.push(Box::new(
-            DynamicWidget::indicator(
-                ui.res.setup_mode.setup_mode.clone(),
-                ui.draw_target.clone(),
-                row_anchor(5) + OFFSET_INDICATOR,
-                Box::new(|state: &bool| match *state {
-                    true => IndicatorState::On,
-                    false => IndicatorState::Off,
+                    Action::Reboot => "> Reboot".into(),
+                    _ => "  Reboot".into(),
                 }),
             )
             .await,
@@ -148,8 +144,21 @@ impl MountableScreen for SystemScreen {
                 ui.draw_target.clone(),
                 row_anchor(6),
                 Box::new(|action| match action {
-                    Action::ToggleSetupMode => "  Reboot".into(),
-                    Action::Reboot => "> Reboot".into(),
+                    Action::Help => "> Help".into(),
+                    _ => "  Help".into(),
+                }),
+            )
+            .await,
+        ));
+
+        self.widgets.push(Box::new(
+            DynamicWidget::text(
+                self.highlighted.clone(),
+                ui.draw_target.clone(),
+                row_anchor(7),
+                Box::new(|action| match action {
+                    Action::SetupMode => "> Setup Mode".into(),
+                    _ => "  Setup Mode".into(),
                 }),
             )
             .await,
@@ -164,59 +173,45 @@ impl MountableScreen for SystemScreen {
             while let Some(ev) = button_events.next().await {
                 let action = action_highlight.get().await;
 
-                match (ev, action) {
-                    (
-                        ButtonEvent::Release {
-                            btn: Button::Lower,
-                            dur: PressDuration::Long,
-                            loc: Location::Local,
-                        },
-                        Action::ToggleSetupMode,
-                    ) => setup_mode.modify(|prev| Some(!prev.unwrap_or(true))).await,
-                    (
-                        ButtonEvent::Release {
-                            btn: Button::Lower,
-                            dur: PressDuration::Long,
-                            loc: Location::Web,
-                        },
-                        Action::ToggleSetupMode,
-                    ) => { /* Not allowed*/ }
-                    (
-                        ButtonEvent::Release {
-                            btn: Button::Lower,
-                            dur: PressDuration::Long,
-                            loc: _,
-                        },
-                        Action::Reboot,
-                    ) => screen.set(Screen::RebootConfirm).await,
-                    (
-                        ButtonEvent::Release {
-                            btn: Button::Lower,
-                            dur: PressDuration::Short,
-                            loc: _,
-                        },
-                        Action::ToggleSetupMode,
-                    ) => action_highlight.set(Action::Reboot).await,
-
-                    (
-                        ButtonEvent::Release {
-                            btn: Button::Lower,
-                            dur: PressDuration::Short,
-                            loc: _,
-                        },
-                        Action::Reboot,
-                    ) => action_highlight.set(Action::ToggleSetupMode).await,
-                    (
-                        ButtonEvent::Release {
-                            btn: Button::Upper,
-                            dur: _,
-                            loc: _,
-                        },
-                        _,
-                    ) => {
+                match ev {
+                    ButtonEvent::Release {
+                        btn: Button::Lower,
+                        dur: _,
+                        loc: Location::Web,
+                    } => {
+                        /* Only allow upper button interaction (going to the next screen)
+                         * for inputs on the web.
+                         * Triggering Reboots is possible via the API, so we do not have to
+                         * protect against that and opening the help text is harmless as well,
+                         * but we could think of an attacker that tricks a local user into
+                         * long pressing the lower button right when the attacker goes to the
+                         * "Setup Mode" entry in the menu so that they can deploy new keys.
+                         * Prevent that by disabling navigation altogether. */
+                    }
+                    ButtonEvent::Release {
+                        btn: Button::Lower,
+                        dur: PressDuration::Long,
+                        loc: Location::Local,
+                    } => match action {
+                        Action::Reboot => screen.set(Screen::RebootConfirm).await,
+                        Action::Help => screen.set(Screen::Help).await,
+                        Action::SetupMode => {
+                            setup_mode.modify(|prev| Some(!prev.unwrap_or(true))).await
+                        }
+                    },
+                    ButtonEvent::Release {
+                        btn: Button::Lower,
+                        dur: PressDuration::Short,
+                        loc: Location::Local,
+                    } => action_highlight.set(action.next()).await,
+                    ButtonEvent::Release {
+                        btn: Button::Upper,
+                        dur: _,
+                        loc: _,
+                    } => {
                         screen.set(SCREEN_TYPE.next()).await;
                     }
-                    (ButtonEvent::Press { btn: _, loc: _ }, _) => {}
+                    ButtonEvent::Press { btn: _, loc: _ } => {}
                 }
             }
         });

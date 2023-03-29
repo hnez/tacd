@@ -332,12 +332,14 @@ pub trait AnyTopic: Sync + Send {
     fn web_writable(&self) -> bool;
     fn persistent(&self) -> bool;
     async fn set_from_bytes(&self, msg: &[u8]) -> serde_json::Result<()>;
+    async fn set_from_json_value(&self, msg: serde_json::Value) -> serde_json::Result<()>;
     async fn subscribe_as_bytes(
         self: Arc<Self>,
         sender: Sender<(TopicName, Arc<[u8]>)>,
         enqueue_retained: bool,
     ) -> Box<dyn AnySubscriptionHandle>;
     async fn try_get_as_bytes(&self) -> Option<Arc<[u8]>>;
+    async fn try_get_json_value(&self) -> Option<serde_json::Value>;
 }
 
 #[async_trait]
@@ -363,6 +365,17 @@ impl<E: Serialize + DeserializeOwned + Send + Sync + Clone + 'static> AnyTopic f
     /// Returns an Err if deserialization failed.
     async fn set_from_bytes(&self, msg: &[u8]) -> serde_json::Result<()> {
         let msg = serde_json::from_slice(msg)?;
+        self.set(msg).await;
+        Ok(())
+    }
+
+    /// Take a value that was deserialized as serde_json value and set the
+    /// topic to it.
+    ///
+    /// Returns an Err if de-structuring the generic value into this specific
+    /// type failed.
+    async fn set_from_json_value(&self, msg: serde_json::Value) -> serde_json::Result<()> {
+        let msg = serde_json::from_value(msg)?;
         self.set(msg).await;
         Ok(())
     }
@@ -428,6 +441,18 @@ impl<E: Serialize + DeserializeOwned + Send + Sync + Clone + 'static> AnyTopic f
             .retained
             .back_mut()
             .map(|v| v.serialized())
+    }
+
+    /// Try to get the current value as serde_json value
+    ///
+    /// Returns None if no value was set yet.
+    async fn try_get_json_value(&self) -> Option<serde_json::Value> {
+        self.inner
+            .lock()
+            .await
+            .retained
+            .back()
+            .map(|v| serde_json::to_value(v.native()).unwrap())
     }
 }
 
