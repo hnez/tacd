@@ -48,22 +48,11 @@ impl SetupScreen {
         let (mut setup_mode_events, _) = setup_mode.clone().subscribe_unbounded();
         let screen_task = screen.clone();
         spawn(async move {
-            // Throw away the initial value, which is always true
-            let _ = setup_mode_events.next().await;
-
-            let mut prev = false;
-
             while let Some(setup_mode) = setup_mode_events.next().await {
-                // Go to the setup screen when entering setup mode.
-                // Go to the screen after when leaving.
-                // Do nothing when the setup mode state did not change
-                match (prev, setup_mode) {
-                    (false, true) => screen_task.set(SCREEN_TYPE),
-                    (true, false) => screen_task.set(SCREEN_TYPE.next()),
-                    (true, true) | (false, false) => {}
+                match setup_mode {
+                    true => screen_task.set(SCREEN_TYPE),
+                    false => screen_task.set(SCREEN_TYPE.next()),
                 };
-
-                prev = setup_mode;
             }
         });
 

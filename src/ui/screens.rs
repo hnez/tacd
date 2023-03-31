@@ -85,7 +85,7 @@ impl Screen {
             Self::ScreenSaver => Self::DutPower,
             Self::RebootConfirm => Self::System,
             Self::Rauc => Self::ScreenSaver,
-            Self::Setup => Self::Help,
+            Self::Setup => Self::ScreenSaver,
             Self::Help => Self::ScreenSaver,
         }
     }
