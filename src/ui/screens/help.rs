@@ -76,43 +76,34 @@ impl MountableScreen for HelpScreen {
         let up = Topic::anonymous(Some(false));
         let page = Topic::anonymous(Some(0));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                page.clone(),
-                ui.draw_target.clone(),
-                Point::new(8, 24),
-                Box::new(|page| PAGES[*page].into()),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            page.clone(),
+            ui.draw_target.clone(),
+            Point::new(8, 24),
+            Box::new(|page| PAGES[*page].into()),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                up.clone(),
-                ui.draw_target.clone(),
-                Point::new(8, 200),
-                Box::new(|up| match up {
-                    false => "  Scroll up".into(),
-                    true => "> Scroll up".into(),
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            up.clone(),
+            ui.draw_target.clone(),
+            Point::new(8, 200),
+            Box::new(|up| match up {
+                false => "  Scroll up".into(),
+                true => "> Scroll up".into(),
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                up.clone(),
-                ui.draw_target.clone(),
-                Point::new(8, 220),
-                Box::new(|up| match up {
-                    false => "> Scroll down".into(),
-                    true => "  Scroll down".into(),
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            up.clone(),
+            ui.draw_target.clone(),
+            Point::new(8, 220),
+            Box::new(|up| match up {
+                false => "> Scroll down".into(),
+                true => "  Scroll down".into(),
+            }),
+        )));
 
-        let (mut button_events, buttons_handle) = ui.buttons.clone().subscribe_unbounded().await;
+        let (mut button_events, buttons_handle) = ui.buttons.clone().subscribe_unbounded();
         let screen = ui.screen.clone();
 
         spawn(async move {
@@ -122,7 +113,7 @@ impl MountableScreen for HelpScreen {
                         btn: Button::Lower,
                         dur: PressDuration::Short,
                         loc: _,
-                    } => up.modify(|a| Some(!a.unwrap_or(false))).await,
+                    } => up.modify(|a| Some(!a.unwrap_or(false))),
                     ButtonEvent::Release {
                         btn: Button::Lower,
                         dur: PressDuration::Long,
@@ -135,15 +126,14 @@ impl MountableScreen for HelpScreen {
                             (p, true) => Some(p - 1),
                             (2, false) => Some(2),
                             (p, false) => Some(p + 1),
-                        })
-                        .await;
+                        });
                     }
                     ButtonEvent::Release {
                         btn: Button::Upper,
                         dur: _,
                         loc: _,
                     } => {
-                        screen.set(SCREEN_TYPE.next()).await;
+                        screen.set(SCREEN_TYPE.next());
                     }
                     ButtonEvent::Press { btn: _, loc: _ } => {}
                 }
@@ -155,7 +145,7 @@ impl MountableScreen for HelpScreen {
 
     async fn unmount(&mut self) {
         if let Some(handle) = self.buttons_handle.take() {
-            handle.unsubscribe().await;
+            handle.unsubscribe();
         }
 
         for mut widget in self.widgets.drain(..) {

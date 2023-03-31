@@ -48,7 +48,7 @@ impl SetupScreen {
         let setup_mode_task = setup_mode.clone();
         let screen_task = screen.clone();
         spawn(async move {
-            let (mut setup_mode_events, _) = setup_mode_task.subscribe_unbounded().await;
+            let (mut setup_mode_events, _) = setup_mode_task.subscribe_unbounded();
 
             // Throw away the initial value, which is always true
             let _ = setup_mode_events.next().await;
@@ -61,8 +61,8 @@ impl SetupScreen {
                 // Go to the screen after when leaving.
                 // Do nothing when the setup mode state did not change
                 match (prev, setup_mode) {
-                    (false, true) => screen_task.set(SCREEN_TYPE).await,
-                    (true, false) => screen_task.set(SCREEN_TYPE.next()).await,
+                    (false, true) => screen_task.set(SCREEN_TYPE),
+                    (true, false) => screen_task.set(SCREEN_TYPE.next()),
                     (true, true) | (false, false) => {}
                 };
 
@@ -89,20 +89,18 @@ impl MountableScreen for SetupScreen {
 
         let connectivity_topic_task = connectivity_topic.clone();
         let (mut hostname_stream, hostname_update_handle) =
-            ui.res.network.hostname.clone().subscribe_unbounded().await;
+            ui.res.network.hostname.clone().subscribe_unbounded();
 
         spawn(async move {
             while let Some(hostname) = hostname_stream.next().await {
-                connectivity_topic_task
-                    .modify(|prev| match prev.unwrap() {
-                        Connectivity::Nothing | Connectivity::HostnameOnly(_) => {
-                            Some(Connectivity::HostnameOnly(hostname))
-                        }
-                        Connectivity::IpOnly(ip) | Connectivity::Both(ip, _) => {
-                            Some(Connectivity::Both(ip, hostname))
-                        }
-                    })
-                    .await;
+                connectivity_topic_task.modify(|prev| match prev.unwrap() {
+                    Connectivity::Nothing | Connectivity::HostnameOnly(_) => {
+                        Some(Connectivity::HostnameOnly(hostname))
+                    }
+                    Connectivity::IpOnly(ip) | Connectivity::Both(ip, _) => {
+                        Some(Connectivity::Both(ip, hostname))
+                    }
+                });
             }
         });
 
@@ -112,32 +110,26 @@ impl MountableScreen for SetupScreen {
             .network
             .bridge_interface
             .clone()
-            .subscribe_unbounded()
-            .await;
+            .subscribe_unbounded();
 
         spawn(async move {
             while let Some(ips) = ip_stream.next().await {
-                connectivity_topic_task
-                    .modify(|prev| {
-                        let ip = ips.get(0).cloned();
+                connectivity_topic_task.modify(|prev| {
+                    let ip = ips.get(0).cloned();
 
-                        match (prev.unwrap(), ip) {
-                            (Connectivity::Nothing, Some(ip))
-                            | (Connectivity::IpOnly(_), Some(ip)) => Some(Connectivity::IpOnly(ip)),
-                            (Connectivity::HostnameOnly(hn), Some(ip))
-                            | (Connectivity::Both(_, hn), Some(ip)) => {
-                                Some(Connectivity::Both(ip, hn))
-                            }
-                            (Connectivity::IpOnly(_), None) | (Connectivity::Nothing, None) => {
-                                Some(Connectivity::Nothing)
-                            }
-                            (Connectivity::HostnameOnly(hn), None)
-                            | (Connectivity::Both(_, hn), None) => {
-                                Some(Connectivity::HostnameOnly(hn))
-                            }
+                    match (prev.unwrap(), ip) {
+                        (Connectivity::Nothing, Some(ip)) | (Connectivity::IpOnly(_), Some(ip)) => {
+                            Some(Connectivity::IpOnly(ip))
                         }
-                    })
-                    .await;
+                        (Connectivity::HostnameOnly(hn), Some(ip))
+                        | (Connectivity::Both(_, hn), Some(ip)) => Some(Connectivity::Both(ip, hn)),
+                        (Connectivity::IpOnly(_), None) | (Connectivity::Nothing, None) => {
+                            Some(Connectivity::Nothing)
+                        }
+                        (Connectivity::HostnameOnly(hn), None)
+                        | (Connectivity::Both(_, hn), None) => Some(Connectivity::HostnameOnly(hn)),
+                    }
+                });
             }
         });
 
@@ -159,7 +151,7 @@ impl MountableScreen for SetupScreen {
                 }),
                 Alignment::Center,
             )
-            .await,
+            ,
         ));
 
         self.hostname_update_handle = Some(hostname_update_handle);
@@ -168,11 +160,11 @@ impl MountableScreen for SetupScreen {
 
     async fn unmount(&mut self) {
         if let Some(handle) = self.hostname_update_handle.take() {
-            handle.unsubscribe().await;
+            handle.unsubscribe();
         }
 
         if let Some(handle) = self.ip_update_handle.take() {
-            handle.unsubscribe().await;
+            handle.unsubscribe();
         }
 
         for mut widget in self.widgets.drain(..) {

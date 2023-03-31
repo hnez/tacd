@@ -72,99 +72,79 @@ impl MountableScreen for SystemScreen {
     async fn mount(&mut self, ui: &Ui) {
         draw_border("System Status", SCREEN_TYPE, &ui.draw_target).await;
 
-        self.widgets.push(Box::new(
-            DynamicWidget::locator(ui.locator_dance.clone(), ui.draw_target.clone()).await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::locator(
+            ui.locator_dance.clone(),
+            ui.draw_target.clone(),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                ui.res.temperatures.soc_temperature.clone(),
-                ui.draw_target.clone(),
-                row_anchor(0),
-                Box::new(|meas: &Measurement| format!("SoC:    {:.0}C", meas.value)),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            ui.res.temperatures.soc_temperature.clone(),
+            ui.draw_target.clone(),
+            row_anchor(0),
+            Box::new(|meas: &Measurement| format!("SoC:    {:.0}C", meas.value)),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                ui.res.network.uplink_interface.clone(),
-                ui.draw_target.clone(),
-                row_anchor(1),
-                Box::new(|info: &LinkInfo| match info.carrier {
-                    true => format!("Uplink: {}MBit/s", info.speed),
-                    false => "Uplink: Down".to_string(),
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            ui.res.network.uplink_interface.clone(),
+            ui.draw_target.clone(),
+            row_anchor(1),
+            Box::new(|info: &LinkInfo| match info.carrier {
+                true => format!("Uplink: {}MBit/s", info.speed),
+                false => "Uplink: Down".to_string(),
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                ui.res.network.dut_interface.clone(),
-                ui.draw_target.clone(),
-                row_anchor(2),
-                Box::new(|info: &LinkInfo| match info.carrier {
-                    true => format!("DUT:    {}MBit/s", info.speed),
-                    false => "DUT:    Down".to_string(),
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            ui.res.network.dut_interface.clone(),
+            ui.draw_target.clone(),
+            row_anchor(2),
+            Box::new(|info: &LinkInfo| match info.carrier {
+                true => format!("DUT:    {}MBit/s", info.speed),
+                false => "DUT:    Down".to_string(),
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                ui.res.network.bridge_interface.clone(),
-                ui.draw_target.clone(),
-                row_anchor(3),
-                Box::new(|ips: &Vec<String>| {
-                    let ip = ips.get(0).map(|s| s.as_str()).unwrap_or("-");
-                    format!("IP:     {}", ip)
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            ui.res.network.bridge_interface.clone(),
+            ui.draw_target.clone(),
+            row_anchor(3),
+            Box::new(|ips: &Vec<String>| {
+                let ip = ips.get(0).map(|s| s.as_str()).unwrap_or("-");
+                format!("IP:     {}", ip)
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                self.highlighted.clone(),
-                ui.draw_target.clone(),
-                row_anchor(5),
-                Box::new(|action| match action {
-                    Action::Reboot => "> Reboot".into(),
-                    _ => "  Reboot".into(),
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            self.highlighted.clone(),
+            ui.draw_target.clone(),
+            row_anchor(5),
+            Box::new(|action| match action {
+                Action::Reboot => "> Reboot".into(),
+                _ => "  Reboot".into(),
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                self.highlighted.clone(),
-                ui.draw_target.clone(),
-                row_anchor(6),
-                Box::new(|action| match action {
-                    Action::Help => "> Help".into(),
-                    _ => "  Help".into(),
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            self.highlighted.clone(),
+            ui.draw_target.clone(),
+            row_anchor(6),
+            Box::new(|action| match action {
+                Action::Help => "> Help".into(),
+                _ => "  Help".into(),
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                self.highlighted.clone(),
-                ui.draw_target.clone(),
-                row_anchor(7),
-                Box::new(|action| match action {
-                    Action::SetupMode => "> Setup Mode".into(),
-                    _ => "  Setup Mode".into(),
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            self.highlighted.clone(),
+            ui.draw_target.clone(),
+            row_anchor(7),
+            Box::new(|action| match action {
+                Action::SetupMode => "> Setup Mode".into(),
+                _ => "  Setup Mode".into(),
+            }),
+        )));
 
-        let (mut button_events, buttons_handle) = ui.buttons.clone().subscribe_unbounded().await;
+        let (mut button_events, buttons_handle) = ui.buttons.clone().subscribe_unbounded();
         let action_highlight = self.highlighted.clone();
         let setup_mode = ui.res.setup_mode.setup_mode.clone();
         let screen = ui.screen.clone();
@@ -193,23 +173,21 @@ impl MountableScreen for SystemScreen {
                         dur: PressDuration::Long,
                         loc: Location::Local,
                     } => match action {
-                        Action::Reboot => screen.set(Screen::RebootConfirm).await,
-                        Action::Help => screen.set(Screen::Help).await,
-                        Action::SetupMode => {
-                            setup_mode.modify(|prev| Some(!prev.unwrap_or(true))).await
-                        }
+                        Action::Reboot => screen.set(Screen::RebootConfirm),
+                        Action::Help => screen.set(Screen::Help),
+                        Action::SetupMode => setup_mode.modify(|prev| Some(!prev.unwrap_or(true))),
                     },
                     ButtonEvent::Release {
                         btn: Button::Lower,
                         dur: PressDuration::Short,
                         loc: Location::Local,
-                    } => action_highlight.set(action.next()).await,
+                    } => action_highlight.set(action.next()),
                     ButtonEvent::Release {
                         btn: Button::Upper,
                         dur: _,
                         loc: _,
                     } => {
-                        screen.set(SCREEN_TYPE.next()).await;
+                        screen.set(SCREEN_TYPE.next());
                     }
                     ButtonEvent::Press { btn: _, loc: _ } => {}
                 }
@@ -221,7 +199,7 @@ impl MountableScreen for SystemScreen {
 
     async fn unmount(&mut self) {
         if let Some(handle) = self.buttons_handle.take() {
-            handle.unsubscribe().await;
+            handle.unsubscribe();
         }
 
         for mut widget in self.widgets.drain(..) {

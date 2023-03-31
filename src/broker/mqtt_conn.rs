@@ -290,10 +290,8 @@ async fn handle_connection(
                         // Subscribe to the serialized messages via the broker
                         // framework. This uses a single queue per connection for
                         // all topics.
-                        let sub_handle = topic
-                            .clone()
-                            .subscribe_as_bytes(to_websocket.clone(), true)
-                            .await;
+                        let sub_handle =
+                            topic.clone().subscribe_as_bytes(to_websocket.clone(), true);
 
                         new_subscribes.push(sub_handle);
                     }
@@ -305,7 +303,7 @@ async fn handle_connection(
                         subscription_handles.insert(filter.clone(), new_subscribes)
                     {
                         for unsub in old_subscribes {
-                            unsub.unsubscribe().await
+                            unsub.unsubscribe()
                         }
                     }
                 }
@@ -314,7 +312,7 @@ async fn handle_connection(
                 for filter in unsub_pkg.subscribes() {
                     if let Some(old_subscribes) = subscription_handles.remove(filter) {
                         for unsub in old_subscribes {
-                            unsub.unsubscribe().await
+                            unsub.unsubscribe()
                         }
                     }
                 }
@@ -349,7 +347,7 @@ async fn handle_connection(
                     .find(|t| t.web_writable() && &t.path()[..] == pub_pkg.topic_name());
 
                 if let Some(topic) = topic {
-                    if let Err(e) = topic.set_from_bytes(pub_pkg.payload()).await {
+                    if let Err(e) = topic.set_from_bytes(pub_pkg.payload()) {
                         res = Err(e.into());
                         break 'connection;
                     }
@@ -379,7 +377,7 @@ async fn handle_connection(
 
     // Unsubscribe this connection from all topics
     for desub in subscription_handles.into_values().flatten() {
-        desub.unsubscribe().await
+        desub.unsubscribe()
     }
 
     // We may be able to get a closing frame with some information about errors

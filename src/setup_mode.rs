@@ -114,12 +114,12 @@ impl SetupMode {
         let setup_mode = self.setup_mode.clone();
 
         spawn(async move {
-            let (mut leave_requests, _) = leave_request_topic.subscribe_unbounded().await;
+            let (mut leave_requests, _) = leave_request_topic.subscribe_unbounded();
 
             while let Some(lr) = leave_requests.next().await {
                 if !lr {
                     // Only ever set the setup mode to false in here
-                    setup_mode.set(false).await
+                    setup_mode.set(false)
                 }
             }
         });

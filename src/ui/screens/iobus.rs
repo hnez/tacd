@@ -79,73 +79,59 @@ impl MountableScreen for IoBusScreen {
                 .unwrap();
         }
 
-        self.widgets.push(Box::new(
-            DynamicWidget::text(
-                ui.res.iobus.nodes.clone(),
-                ui.draw_target.clone(),
-                row_anchor(3),
-                Box::new(move |nodes: &Nodes| format!("Connected Nodes:  {}", nodes.result.len())),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::text(
+            ui.res.iobus.nodes.clone(),
+            ui.draw_target.clone(),
+            row_anchor(3),
+            Box::new(move |nodes: &Nodes| format!("Connected Nodes:  {}", nodes.result.len())),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::locator(ui.locator_dance.clone(), ui.draw_target.clone()).await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::locator(
+            ui.locator_dance.clone(),
+            ui.draw_target.clone(),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::indicator(
-                ui.res.iobus.server_info.clone(),
-                ui.draw_target.clone(),
-                row_anchor(0) + OFFSET_INDICATOR,
-                Box::new(|info: &ServerInfo| match info.can_tx_error {
-                    false => IndicatorState::On,
-                    true => IndicatorState::Error,
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::indicator(
+            ui.res.iobus.server_info.clone(),
+            ui.draw_target.clone(),
+            row_anchor(0) + OFFSET_INDICATOR,
+            Box::new(|info: &ServerInfo| match info.can_tx_error {
+                false => IndicatorState::On,
+                true => IndicatorState::Error,
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::indicator(
-                ui.res.iobus.server_info.clone(),
-                ui.draw_target.clone(),
-                row_anchor(1) + OFFSET_INDICATOR,
-                Box::new(|info: &ServerInfo| match info.lss_state {
-                    LSSState::Scanning => IndicatorState::On,
-                    LSSState::Idle => IndicatorState::Off,
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::indicator(
+            ui.res.iobus.server_info.clone(),
+            ui.draw_target.clone(),
+            row_anchor(1) + OFFSET_INDICATOR,
+            Box::new(|info: &ServerInfo| match info.lss_state {
+                LSSState::Scanning => IndicatorState::On,
+                LSSState::Idle => IndicatorState::Off,
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::indicator(
-                ui.res.dig_io.iobus_flt_fb.clone(),
-                ui.draw_target.clone(),
-                row_anchor(2) + OFFSET_INDICATOR,
-                Box::new(|state: &bool| match *state {
-                    true => IndicatorState::Error,
-                    false => IndicatorState::Off,
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::indicator(
+            ui.res.dig_io.iobus_flt_fb.clone(),
+            ui.draw_target.clone(),
+            row_anchor(2) + OFFSET_INDICATOR,
+            Box::new(|state: &bool| match *state {
+                true => IndicatorState::Error,
+                false => IndicatorState::Off,
+            }),
+        )));
 
-        self.widgets.push(Box::new(
-            DynamicWidget::indicator(
-                ui.res.regulators.iobus_pwr_en.clone(),
-                ui.draw_target.clone(),
-                row_anchor(5) + OFFSET_INDICATOR,
-                Box::new(|state: &bool| match *state {
-                    true => IndicatorState::On,
-                    false => IndicatorState::Off,
-                }),
-            )
-            .await,
-        ));
+        self.widgets.push(Box::new(DynamicWidget::indicator(
+            ui.res.regulators.iobus_pwr_en.clone(),
+            ui.draw_target.clone(),
+            row_anchor(5) + OFFSET_INDICATOR,
+            Box::new(|state: &bool| match *state {
+                true => IndicatorState::On,
+                false => IndicatorState::Off,
+            }),
+        )));
 
-        let (mut button_events, buttons_handle) = ui.buttons.clone().subscribe_unbounded().await;
+        let (mut button_events, buttons_handle) = ui.buttons.clone().subscribe_unbounded();
         let iobus_pwr_en = ui.res.regulators.iobus_pwr_en.clone();
         let screen = ui.screen.clone();
 
@@ -156,16 +142,12 @@ impl MountableScreen for IoBusScreen {
                         btn: Button::Lower,
                         dur: PressDuration::Long,
                         loc: _,
-                    } => {
-                        iobus_pwr_en
-                            .modify(|prev| Some(!prev.unwrap_or(true)))
-                            .await
-                    }
+                    } => iobus_pwr_en.modify(|prev| Some(!prev.unwrap_or(true))),
                     ButtonEvent::Release {
                         btn: Button::Upper,
                         dur: _,
                         loc: _,
-                    } => screen.set(SCREEN_TYPE.next()).await,
+                    } => screen.set(SCREEN_TYPE.next()),
                     ButtonEvent::Release {
                         btn: Button::Lower,
                         dur: PressDuration::Short,
@@ -181,7 +163,7 @@ impl MountableScreen for IoBusScreen {
 
     async fn unmount(&mut self) {
         if let Some(handle) = self.buttons_handle.take() {
-            handle.unsubscribe().await;
+            handle.unsubscribe();
         }
 
         for mut widget in self.widgets.drain(..) {

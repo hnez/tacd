@@ -41,7 +41,7 @@ struct PersistenceFile {
     persistent_topics: Map<String, Value>,
 }
 
-async fn load(topics: &[Arc<dyn AnyTopic>]) -> Result<()> {
+fn load(topics: &[Arc<dyn AnyTopic>]) -> Result<()> {
     let path = Path::new(PERSISTENCE_PATH);
 
     if !path.is_file() {
@@ -64,7 +64,7 @@ async fn load(topics: &[Arc<dyn AnyTopic>]) -> Result<()> {
         let path: &str = topic.path();
 
         if let Some(value) = content.remove(path) {
-            topic.set_from_json_value(value).await?;
+            topic.set_from_json_value(value)?;
         }
     }
 
@@ -76,6 +76,55 @@ async fn load(topics: &[Arc<dyn AnyTopic>]) -> Result<()> {
 
         bail!("Left over topics in state file");
     }
+
+    Ok(())
+}
+
+fn save(topics: &Arc<Vec<Arc<dyn AnyTopic>>>) -> Result<()> {
+    let persistent_topics = {
+        let mut map = Map::new();
+
+        for topic in topics.iter().filter(|t| t.persistent()) {
+            let key = topic.path().to_string();
+            let value = topic.try_get_json_value();
+
+            if let Some(value) = value {
+                if map.insert(key, value).is_some() {
+                    let name: &str = topic.path();
+                    error!("Duplicate persistent topic: \"{name}\"");
+                    // continue anyways
+                }
+            }
+        }
+
+        map
+    };
+
+    let file_contents = PersistenceFile {
+        format_version: 1,
+        persistent_topics,
+    };
+
+    let path = Path::new(PERSISTENCE_PATH);
+    let parent = path.parent().unwrap();
+
+    let path_tmp = {
+        let mut path_tmp = path.to_owned();
+        assert!(path_tmp.set_extension("tmp"));
+        path_tmp
+    };
+
+    if !parent.exists() {
+        create_dir(parent)?;
+    }
+
+    {
+        let fd = File::create(&path_tmp)?;
+        to_writer_pretty(&fd, &file_contents)?;
+        fd.sync_all()?;
+    }
+
+    rename(path_tmp, path)?;
 
     Ok(())
 }
@@ -92,62 +141,19 @@ async fn save_on_change(
             topic_name
         );
 
-        let persistent_topics = {
-            let mut map = Map::new();
-
-            for topic in topics.iter().filter(|t| t.persistent()) {
-                let key = topic.path().to_string();
-                let value = topic.try_get_json_value().await;
-
-                if let Some(value) = value {
-                    if map.insert(key, value).is_some() {
-                        let name: &str = topic.path();
-                        error!("Duplicate persistent topic: \"{name}\"");
-                        // continue anyways
-                    }
-                }
-            }
-
-            map
-        };
-
-        let file_contents = PersistenceFile {
-            format_version: 1,
-            persistent_topics,
-        };
-
-        let path = Path::new(PERSISTENCE_PATH);
-        let parent = path.parent().unwrap();
-
-        let path_tmp = {
-            let mut path_tmp = path.to_owned();
-            assert!(path_tmp.set_extension("tmp"));
-            path_tmp
-        };
-
-        if !parent.exists() {
-            create_dir(parent)?;
-        }
-
-        {
-            let fd = File::create(&path_tmp)?;
-            to_writer_pretty(&fd, &file_contents)?;
-            fd.sync_all()?;
-        }
-
-        rename(path_tmp, path)?;
+        save(&topics)?;
     }
 
     Ok(())
 }
 
 pub async fn register(topics: Arc<Vec<Arc<dyn AnyTopic>>>) {
-    load(&topics).await.unwrap();
+    load(&topics).unwrap();
 
     let (tx, rx) = unbounded();
 
     for topic in topics.iter().filter(|t| t.persistent()).cloned() {
-        topic.subscribe_as_bytes(tx.clone(), false).await;
+        topic.subscribe_as_bytes(tx.clone(), false);
     }
 
     spawn(async move { save_on_change(topics, rx).await.unwrap() });
