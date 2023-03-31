@@ -74,7 +74,7 @@ impl Rauc {
     }
 
     #[cfg(feature = "demo_mode")]
-    pub async fn new(bb: &mut BrokerBuilder, _conn: &Arc<Connection>) -> Self {
+    pub fn new(bb: &mut BrokerBuilder, _conn: &Arc<Connection>) -> Self {
         let inst = Self::setup_topics(bb);
 
         inst.operation.set("idle".to_string());
@@ -85,7 +85,7 @@ impl Rauc {
     }
 
     #[cfg(not(feature = "demo_mode"))]
-    pub async fn new(bb: &mut BrokerBuilder, conn: &Arc<Connection>) -> Self {
+    pub fn new(bb: &mut BrokerBuilder, conn: &Arc<Connection>) -> Self {
         let inst = Self::setup_topics(bb);
 
         let conn_task = conn.clone();
@@ -201,14 +201,13 @@ impl Rauc {
         });
 
         let conn_task = conn.clone();
-        let install = inst.install.clone();
+        let (mut install_stream, _) = inst.install.clone().subscribe_unbounded();
 
         // Forward the "install" topic from the broker framework to RAUC
         spawn(async move {
             let proxy = installer::InstallerProxy::new(&conn_task).await.unwrap();
-            let (mut stream, _) = install.subscribe_unbounded();
 
-            while let Some(url) = stream.next().await {
+            while let Some(url) = install_stream.next().await {
                 // Poor-mans validation. It feels wrong to let someone point to any
                 // file on the TAC from the web interface.
                 if url.starts_with("http://") || url.starts_with("https://") {

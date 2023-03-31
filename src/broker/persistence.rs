@@ -147,7 +147,7 @@ async fn save_on_change(
     Ok(())
 }
 
-pub async fn register(topics: Arc<Vec<Arc<dyn AnyTopic>>>) {
+pub fn register(topics: Arc<Vec<Arc<dyn AnyTopic>>>) {
     load(&topics).unwrap();
 
     let (tx, rx) = unbounded();

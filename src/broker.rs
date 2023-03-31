@@ -113,10 +113,10 @@ impl BrokerBuilder {
     /// Finish building the broker
     ///
     /// This consumes the builder so that no new topics can be registered
-    pub async fn build(self, server: &mut tide::Server<()>) {
+    pub fn build(self, server: &mut tide::Server<()>) {
         let topics = Arc::new(self.topics);
 
-        persistence::register(topics.clone()).await;
+        persistence::register(topics.clone());
         rest::register(server, topics.clone());
         mqtt_conn::register(server, topics);
     }

@@ -45,18 +45,15 @@ pub struct SetupScreen {
 
 impl SetupScreen {
     pub fn new(screen: &Arc<Topic<Screen>>, setup_mode: &Arc<Topic<bool>>) -> Self {
-        let setup_mode_task = setup_mode.clone();
+        let (mut setup_mode_events, _) = setup_mode.clone().subscribe_unbounded();
         let screen_task = screen.clone();
         spawn(async move {
-            let (mut setup_mode_events, _) = setup_mode_task.subscribe_unbounded();
-
             // Throw away the initial value, which is always true
             let _ = setup_mode_events.next().await;
 
             let mut prev = false;
 
             while let Some(setup_mode) = setup_mode_events.next().await {
-                println!("setup_mode: {setup_mode}");
                 // Go to the setup screen when entering setup mode.
                 // Go to the screen after when leaving.
                 // Do nothing when the setup mode state did not change
