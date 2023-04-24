@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@cloudscape-design/components": "^3.0.7",
+    "@cloudscape-design/components": "^3.0.259",
     "@cloudscape-design/global-styles": "^1.0.1",
     "@testing-library/jest-dom": "^5.16.4",
     "@testing-library/react": "^13.3.0",
@@ -18,7 +18,7 @@
     "ace-builds": "^1.9.6",
     "paho-mqtt": "^1.1.0",
     "prettier": "^2.7.1",
-    "react": "^18.2.0",
+    "react": "^18",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.3.0",
     "react-scripts": "5.0.1",

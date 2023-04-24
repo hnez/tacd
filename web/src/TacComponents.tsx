@@ -31,6 +31,7 @@ import SpaceBetween from "@cloudscape-design/components/space-between";
 import Spinner from "@cloudscape-design/components/spinner";
 import StatusIndicator from "@cloudscape-design/components/status-indicator";
 
+import { nbdServe } from "./nbd";
 import { MqttButton } from "./MqttComponents";
 import { useMqttSubscription, useMqttState } from "./mqtt";
 
@@ -183,6 +184,21 @@ export function RaucSlotStatus() {
   }
 }
 
+export function RaucUpload() {
+  return (
+    <input
+      type="file"
+      accept=".raucb"
+      onChange={(ev) => {
+        if (ev.target !== null && ev.target.files !== null) {
+          let file = ev.target.files[0];
+          nbdServe("ws://localhost:8080/v1/nbd?size=" + file.size, file);
+        }
+      }}
+    />
+  );
+}
+
 export function RaucInstall() {
   // eslint-disable-next-line
   const [_install_settled, _install_payload, triggerInstall] =
@@ -313,6 +329,7 @@ export function RaucContainer() {
       }
     >
       <SpaceBetween size="m">
+        <RaucUpload />
         <RaucInstall />
         <RaucSlotStatus />
       </SpaceBetween>

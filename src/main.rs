@@ -27,6 +27,7 @@ mod iobus;
 mod journal;
 mod led;
 mod measurement;
+mod nbd;
 mod regulators;
 mod setup_mode;
 mod system;
@@ -100,6 +101,8 @@ async fn main() -> Result<(), std::io::Error> {
 
     // Allow editing some aspects of the TAC configuration when in "setup mode".
     let setup_mode = SetupMode::new(&mut bb, &mut http_server.server);
+
+    nbd::register(&mut http_server.server);
 
     // Expose a live log of the TAC's systemd journal so it can be viewed
     // in the web interface.
