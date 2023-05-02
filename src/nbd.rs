@@ -34,7 +34,6 @@ async fn handle_connection(ws: WebSocketStream<Connection>, nbd_size: u64) {
         let mut nbd = NBD::new().unwrap();
         let index = NBDConnect::new()
             .disconnect_on_close(true)
-            .block_size(1)
             .size_bytes(nbd_size)
             .read_only(true)
             .connect(&mut nbd, &[nbd_kernel])
