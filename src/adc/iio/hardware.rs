@@ -35,10 +35,12 @@ use thread_priority::*;
 
 use crate::measurement::{Measurement, Timestamp};
 
+type ChannelDesc = (&'static str, &'static str, &'static str);
+
 // Hard coded list of channels using the internal STM32MP1 ADC.
 // Consists of the IIO channel name, the location of the calibration data
 // in the device tree and an internal name for the channel.
-const CHANNELS_STM32: &[(&str, &str, &str)] = &[
+const CHANNELS_STM32: &[ChannelDesc] = &[
     (
         "voltage13",
         "baseboard-factory-data/usb-host-curr",
@@ -75,7 +77,7 @@ const CHANNELS_STM32: &[(&str, &str, &str)] = &[
 
 // The same as for the STM32MP1 channels but for the discrete ADC on the power
 // board.
-const CHANNELS_PWR: &[(&str, &str, &str)] = &[
+const CHANNELS_PWR: &[ChannelDesc] = &[
     ("voltage", "powerboard-factory-data/pwr-volt", "pwr-volt"),
     ("current", "powerboard-factory-data/pwr-curr", "pwr-curr"),
 ];
