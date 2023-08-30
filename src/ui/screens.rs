@@ -30,6 +30,7 @@ mod dig_out;
 mod help;
 mod iobus;
 mod locator;
+mod overtemperature;
 mod power;
 mod reboot;
 mod screensaver;
@@ -44,6 +45,7 @@ use dig_out::DigOutScreen;
 use help::HelpScreen;
 use iobus::IoBusScreen;
 use locator::LocatorScreen;
+use overtemperature::OverTemperatureScreen;
 use power::PowerScreen;
 use reboot::RebootConfirmScreen;
 use screensaver::ScreenSaverScreen;
@@ -81,6 +83,7 @@ pub enum AlertScreen {
     UpdateInstallation,
     Help,
     Setup,
+    OverTemperature,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Debug)]
@@ -195,6 +198,10 @@ pub(super) fn init(
         Box::new(RebootConfirmScreen::new(alerts, reboot_message)),
         Box::new(ScreenSaverScreen::new(buttons, alerts)),
         Box::new(SetupScreen::new(alerts, &res.setup_mode.setup_mode)),
+        Box::new(OverTemperatureScreen::new(
+            alerts,
+            &res.temperatures.warning,
+        )),
         Box::new(LocatorScreen::new(alerts, locator)),
     ]
 }
