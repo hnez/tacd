@@ -39,6 +39,7 @@ mod uart;
 mod update_available;
 mod update_installation;
 mod usb;
+mod usb_overload;
 
 use dig_out::DigOutScreen;
 use help::HelpScreen;
@@ -53,6 +54,7 @@ use uart::UartScreen;
 use update_available::UpdateAvailableScreen;
 use update_installation::UpdateInstallationScreen;
 use usb::UsbScreen;
+use usb_overload::UsbOverloadScreen;
 
 use super::buttons;
 use super::widgets;
@@ -79,6 +81,7 @@ pub enum AlertScreen {
     RebootConfirm,
     UpdateAvailable,
     UpdateInstallation,
+    UsbOverload,
     Help,
     Setup,
 }
@@ -196,5 +199,6 @@ pub(super) fn init(
         Box::new(ScreenSaverScreen::new(buttons, alerts)),
         Box::new(SetupScreen::new(alerts, &res.setup_mode.setup_mode)),
         Box::new(LocatorScreen::new(alerts, locator)),
+        Box::new(UsbOverloadScreen::new(alerts, &res.usb_hub.overload)),
     ]
 }
