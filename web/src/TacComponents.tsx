@@ -89,6 +89,17 @@ enum RaucInstallStep {
   Done,
 }
 
+enum OutputState {
+  On = "On",
+  Off = "Off",
+  OffFloating = "OffFloating",
+  Changing = "Changing",
+  InvertedPolarity = "InvertedPolarity",
+  OverCurrent = "OverCurrent",
+  OverVoltage = "OverVoltage",
+  RealtimeViolation = "RealtimeViolation",
+}
+
 type Duration = {
   secs: number;
   nanos: number;
@@ -205,7 +216,7 @@ export function SlotStatus() {
 
 export function UpdateChannels() {
   const channels_topic = useMqttSubscription<Array<Channel>>(
-    "/v1/tac/update/channels",
+    "/v1/tac/update/channels"
   );
 
   const channels = channels_topic !== undefined ? channels_topic : [];
@@ -383,7 +394,7 @@ export function ProgressNotification() {
 
 export function RebootNotification() {
   const should_reboot = useMqttSubscription<boolean>(
-    "/v1/tac/update/should_reboot",
+    "/v1/tac/update/should_reboot"
   );
 
   return (
@@ -425,7 +436,7 @@ export function UpdateContainer() {
 
 export function UpdateNotification() {
   const channels = useMqttSubscription<Array<Channel>>(
-    "/v1/tac/update/channels",
+    "/v1/tac/update/channels"
   );
 
   let updates = [];
@@ -484,6 +495,51 @@ export function LocatorNotification() {
       header="Find this TAC"
     >
       Someone is looking for this TAC.
+    </Alert>
+  );
+}
+
+export function PowerFailNotification() {
+  const state = useMqttSubscription<OutputState>("/v1/dut/powered");
+
+  let reason = null;
+
+  switch (state) {
+    case OutputState.InvertedPolarity:
+      reason = "an inverted polarity event";
+      break;
+    case OutputState.OverCurrent:
+      reason = "an overcurrent event";
+      break;
+    case OutputState.OverVoltage:
+      reason = "an overvoltage event";
+      break;
+    case OutputState.RealtimeViolation:
+      reason = "a realtime violation";
+      break;
+  }
+
+  return (
+    <Alert
+      statusIconAriaLabel="Info"
+      visible={reason !== null}
+      action={
+        <SpaceBetween size="xs">
+          <MqttButton iconName="refresh" topic="/v1/dut/powered" send={"On"}>
+            Turn DUT back on
+          </MqttButton>
+          <MqttButton
+            iconName="status-stopped"
+            topic="/v1/dut/powered"
+            send={"Off"}
+          >
+            Keep DUT powered off
+          </MqttButton>
+        </SpaceBetween>
+      }
+      header="DUT powered off"
+    >
+      The DUT was powered off due to {reason}.
     </Alert>
   );
 }
