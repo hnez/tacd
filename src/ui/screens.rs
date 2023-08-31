@@ -31,6 +31,7 @@ mod help;
 mod iobus;
 mod locator;
 mod power;
+mod power_fail;
 mod reboot;
 mod screensaver;
 mod setup;
@@ -45,6 +46,7 @@ use help::HelpScreen;
 use iobus::IoBusScreen;
 use locator::LocatorScreen;
 use power::PowerScreen;
+use power_fail::PowerFailScreen;
 use reboot::RebootConfirmScreen;
 use screensaver::ScreenSaverScreen;
 use setup::SetupScreen;
@@ -75,6 +77,7 @@ pub enum NormalScreen {
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Debug)]
 pub enum AlertScreen {
     ScreenSaver,
+    PowerFail,
     Locator,
     RebootConfirm,
     UpdateAvailable,
@@ -196,5 +199,6 @@ pub(super) fn init(
         Box::new(ScreenSaverScreen::new(buttons, alerts)),
         Box::new(SetupScreen::new(alerts, &res.setup_mode.setup_mode)),
         Box::new(LocatorScreen::new(alerts, locator)),
+        Box::new(PowerFailScreen::new(alerts, &res.dut_pwr.state)),
     ]
 }
