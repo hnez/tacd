@@ -132,8 +132,8 @@ impl FindDecoy {
     }
 }
 
-pub fn find_line(name: &str) -> Result<FindDecoy> {
-    Ok(FindDecoy {
+pub fn find_line(name: &str) -> Option<FindDecoy> {
+    Some(FindDecoy {
         name: name.to_string(),
     })
 }

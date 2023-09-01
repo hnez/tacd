@@ -126,7 +126,7 @@ impl FindDecoy {
     }
 }
 
-pub fn find_line(name: &str) -> Result<FindDecoy> {
+pub fn find_line(name: &str) -> Option<FindDecoy> {
     let val = {
         let mut lines = block_on(LINES.lock());
 
@@ -139,7 +139,7 @@ pub fn find_line(name: &str) -> Result<FindDecoy> {
         }
     };
 
-    Ok(FindDecoy {
+    Some(FindDecoy {
         name: name.to_string(),
         val,
     })
