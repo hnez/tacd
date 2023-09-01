@@ -16,29 +16,33 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 use std::convert::{TryFrom, TryInto};
+use std::fs::create_dir;
 use std::io::Read;
+use std::path::Path;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use async_std::channel::bounded;
 use async_std::stream::StreamExt;
 use async_std::sync::Arc;
 
 use industrial_io::{Buffer, Channel};
 
-use log::{debug, warn};
+use log::{debug, error, warn};
 use thread_priority::*;
 
 use crate::measurement::{Measurement, Timestamp};
 
+type ChannelDesc = (&'static str, &'static str, &'static str);
+
 // Hard coded list of channels using the internal STM32MP1 ADC.
 // Consists of the IIO channel name, the location of the calibration data
 // in the device tree and an internal name for the channel.
-const CHANNELS_STM32: &[(&str, &str, &str)] = &[
+const CHANNELS_STM32: &[ChannelDesc] = &[
     (
         "voltage13",
         "baseboard-factory-data/usb-host-curr",
@@ -75,10 +79,14 @@ const CHANNELS_STM32: &[(&str, &str, &str)] = &[
 
 // The same as for the STM32MP1 channels but for the discrete ADC on the power
 // board.
-const CHANNELS_PWR: &[(&str, &str, &str)] = &[
+const CHANNELS_PWR: &[ChannelDesc] = &[
     ("voltage", "powerboard-factory-data/pwr-volt", "pwr-volt"),
     ("current", "powerboard-factory-data/pwr-curr", "pwr-curr"),
 ];
+
+const TRIGGER_HR_PWR_DIR: &str = "/sys/kernel/config/iio/triggers/hrtimer/tacd-pwr";
+
+const TIMESTAMP_ERROR: u64 = u64::MAX;
 
 #[derive(Clone, Copy)]
 struct Calibration {
@@ -171,7 +179,11 @@ impl CalibratedChannel {
 
         let ts_after = self.iio_thread.timestamp.load(Ordering::Acquire);
 
-        if (ts_before == ts_after) && (ts_before != 0) {
+        if ts_before == TIMESTAMP_ERROR || ts_after == TIMESTAMP_ERROR {
+            panic!("Failed to read from ADC");
+        }
+
+        if ts_before == ts_after {
             let ts = self
                 .iio_thread
                 .ref_instant
@@ -209,12 +221,19 @@ impl CalibratedChannel {
 pub struct IioThread {
     ref_instant: Instant,
     timestamp: AtomicU64,
-    values: [AtomicU16; 10],
+    values: Vec<AtomicU16>,
     join: Mutex<Option<JoinHandle<()>>>,
+    channel_descs: &'static [ChannelDesc],
 }
 
 impl IioThread {
-    fn adc_setup() -> Result<(Vec<Channel>, Buffer, Vec<Channel>)> {
+    fn adc_setup(
+        adc_name: &str,
+        trigger_name: &str,
+        sample_rate: i64,
+        channel_descs: &[ChannelDesc],
+        buffer_len: usize,
+    ) -> Result<(Vec<Channel>, Buffer)> {
         let ctx = industrial_io::Context::new()?;
 
         debug!("IIO devices:");
@@ -222,21 +241,18 @@ impl IioThread {
             debug!("  * {}", &dev.name().unwrap_or_default());
         }
 
-        let stm32_adc = ctx
-            .find_device("48003000.adc:adc@0")
-            .ok_or(anyhow!("Could not find STM32 ADC"))?;
-        let pwr_adc = ctx
-            .find_device("lmp92064")
-            .ok_or(anyhow!("Could not find Powerboard ADC"))?;
+        let adc = ctx
+            .find_device(adc_name)
+            .ok_or(anyhow!("Could not find ADC: {}", adc_name))?;
 
-        if let Err(err) = stm32_adc.attr_write_bool("buffer/enable", false) {
-            warn!("Failed to disable STM32 ADC buffer: {}", err);
+        if let Err(err) = adc.attr_write_bool("buffer/enable", false) {
+            warn!("Failed to disable {} ADC buffer: {}", adc_name, err);
         }
 
-        let stm32_channels: Vec<Channel> = CHANNELS_STM32
+        let channels: Vec<Channel> = channel_descs
             .iter()
             .map(|(iio_name, _, _)| {
-                let ch = stm32_adc
+                let ch = adc
                     .find_channel(iio_name, false)
                     .unwrap_or_else(|| panic!("Failed to open iio channel {}", iio_name));
 
@@ -245,24 +261,16 @@ impl IioThread {
             })
             .collect();
 
-        let pwr_channels: Vec<Channel> = CHANNELS_PWR
-            .iter()
-            .map(|(iio_name, _, _)| {
-                pwr_adc
-                    .find_channel(iio_name, false)
-                    .unwrap_or_else(|| panic!("Failed to open iio channel {}", iio_name))
-            })
-            .collect();
-
         let trig = ctx
-            .find_device("tim4_trgo")
-            .ok_or(anyhow!("Could not find STM32 Timer 4 trigger"))?;
-        trig.attr_write_int("sampling_frequency", 1024)?;
+            .find_device(trigger_name)
+            .ok_or(anyhow!("Could not find IIO trigger: {}", trigger_name))?;
 
-        stm32_adc.set_trigger(&trig)?;
+        trig.attr_write_int("sampling_frequency", sample_rate)?;
+
+        adc.set_trigger(&trig)?;
         ctx.set_timeout_ms(1000)?;
 
-        let stm32_buf = stm32_adc.create_buffer(128, false)?;
+        let buf = adc.create_buffer(buffer_len, false)?;
 
         set_thread_priority_and_policy(
             thread_native_id(),
@@ -271,10 +279,17 @@ impl IioThread {
         )
         .map_err(|e| anyhow!("Failed to set realtime thread priority: {e:?}"))?;
 
-        Ok((stm32_channels, stm32_buf, pwr_channels))
+        Ok((channels, buf))
     }
 
-    pub async fn new() -> Result<Arc<Self>> {
+    pub async fn new(
+        thread_name: &str,
+        adc_name: &'static str,
+        trigger_name: &'static str,
+        sample_rate: i64,
+        channel_descs: &'static [ChannelDesc],
+        buffer_len: usize,
+    ) -> Result<Arc<Self>> {
         // Some of the adc thread setup can only happen _in_ the adc thread,
         // like setting the priority or some iio setup, as not all structs
         // are Send.
@@ -286,62 +301,59 @@ impl IioThread {
 
         // Spawn a high priority thread that updates the atomic values in `thread`.
         let join = thread::Builder::new()
-            .name("tacd iio".into())
+            .name(format!("tacd {thread_name} iio"))
             .spawn(move || {
-                let (thread_weak, stm32_channels, mut stm32_buf, pwr_channels) =
-                    match Self::adc_setup() {
-                        Ok((stm32_channels, stm32_buf, pwr_channels)) => {
-                            let thread = Arc::new(Self {
-                                ref_instant: Instant::now(),
-                                timestamp: AtomicU64::new(0),
-                                values: [
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                    AtomicU16::new(0),
-                                ],
-                                join: Mutex::new(None),
-                            });
-                            let thread_weak = Arc::downgrade(&thread);
+                let adc_setup_res = Self::adc_setup(
+                    adc_name,
+                    trigger_name,
+                    sample_rate,
+                    channel_descs,
+                    buffer_len,
+                );
+                let (thread, channels, mut buf) = match adc_setup_res {
+                    Ok((channels, buf)) => {
+                        let thread = Arc::new(Self {
+                            ref_instant: Instant::now(),
+                            timestamp: AtomicU64::new(TIMESTAMP_ERROR),
+                            values: channels.iter().map(|_| AtomicU16::new(0)).collect(),
+                            join: Mutex::new(None),
+                            channel_descs,
+                        });
 
-                            thread_res_tx.try_send(Ok(thread)).unwrap();
+                        (thread, channels, buf)
+                    }
+                    Err(e) => {
+                        thread_res_tx.try_send(Err(e)).unwrap();
+                        return;
+                    }
+                };
 
-                            (thread_weak, stm32_channels, stm32_buf, pwr_channels)
-                        }
-                        Err(e) => {
-                            thread_res_tx.try_send(Err(e)).unwrap();
-                            panic!()
-                        }
-                    };
+                let thread_weak = Arc::downgrade(&thread);
+                let mut signal_ready = Some((thread, thread_res_tx));
 
                 // Stop running as soon as the last reference to this Arc<IioThread>
                 // is dropped (e.g. the weak reference can no longer be upgraded).
                 while let Some(thread) = thread_weak.upgrade() {
-                    // Use the buffer interface to get STM32 ADC values at a high
-                    // sampling rate to perform averaging in software.
-                    stm32_buf.refill().unwrap();
+                    if let Err(e) = buf.refill() {
+                        thread.timestamp.store(TIMESTAMP_ERROR, Ordering::Relaxed);
 
-                    let stm32_values = stm32_channels.iter().map(|ch| {
-                        let buf_sum: u32 =
-                            stm32_buf.channel_iter::<u16>(ch).map(|v| v as u32).sum();
-                        (buf_sum / (stm32_buf.capacity() as u32)) as u16
+                        error!("Failed to refill {} ADC buffer: {}", adc_name, e);
+
+                        // If the ADC has not yet produced any values we still have the
+                        // queue at hand that signals readiness to the main thread.
+                        // This gives us a chance to return an Err from new().
+                        // If the queue was already used just print an error instead.
+                        if let Some((_, tx)) = signal_ready.take() {
+                            tx.try_send(Err(Error::new(e))).unwrap();
+                        }
+
+                        break;
+                    }
+
+                    let values = channels.iter().map(|ch| {
+                        let buf_sum: u32 = buf.channel_iter::<u16>(ch).map(|v| v as u32).sum();
+                        (buf_sum / (buf.capacity() as u32)) as u16
                     });
-
-                    // Use the sysfs based interface to get the values from the
-                    // power board ADC at a slow sampling rate.
-                    let pwr_values = pwr_channels
-                        .iter()
-                        .map(|ch| ch.attr_read_int("raw").unwrap() as u16);
-
-                    // The power board values are located after the stm32 values
-                    // in the thread.values array.
-                    let values = stm32_values.chain(pwr_values);
 
                     for (d, s) in thread.values.iter().zip(values) {
                         d.store(s, Ordering::Relaxed)
@@ -355,6 +367,12 @@ impl IioThread {
                         .unwrap();
 
                     thread.timestamp.store(ts, Ordering::Release);
+
+                    // Now that we know that the ADC actually works and we have
+                    // initial values: return a handle to it.
+                    if let Some((content, tx)) = signal_ready.take() {
+                        tx.try_send(Ok(content)).unwrap();
+                    }
                 }
             })?;
 
@@ -364,12 +382,32 @@ impl IioThread {
         Ok(thread)
     }
 
+    pub async fn new_stm32() -> Result<Arc<Self>> {
+        Self::new(
+            "stm32",
+            "48003000.adc:adc@0",
+            "tim4_trgo",
+            80,
+            CHANNELS_STM32,
+            4,
+        )
+        .await
+    }
+
+    pub async fn new_powerboard() -> Result<Arc<Self>> {
+        let hr_trigger_path = Path::new(TRIGGER_HR_PWR_DIR);
+
+        if !hr_trigger_path.is_dir() {
+            create_dir(hr_trigger_path).unwrap();
+        }
+
+        Self::new("powerboard", "lmp92064", "tacd-pwr", 20, CHANNELS_PWR, 1).await
+    }
     /// Use the channel names defined at the top of the file to get a reference
     /// to a channel
     pub fn get_channel(self: Arc<Self>, ch_name: &str) -> Result<CalibratedChannel> {
-        CHANNELS_STM32
+        self.channel_descs
             .iter()
-            .chain(CHANNELS_PWR)
             .enumerate()
             .find(|(_, (_, _, name))| name == &ch_name)
             .ok_or(anyhow!("Could not get adc channel {}", ch_name))
