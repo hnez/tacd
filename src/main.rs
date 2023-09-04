@@ -47,17 +47,11 @@ use regulators::Regulators;
 use setup_mode::SetupMode;
 use system::System;
 use temperatures::Temperatures;
-use ui::{setup_display, Ui, UiResources};
+use ui::{setup_display, Display, Ui, UiResources};
 use usb_hub::UsbHub;
 use watchdog::Watchdog;
 
-#[async_std::main]
-async fn main() -> Result<(), std::io::Error> {
-    env_logger::init();
-
-    // Show a splash screen very early on
-    let display = setup_display();
-
+async fn init() -> anyhow::Result<(Ui, HttpServer, Option<Watchdog>)> {
     // The BrokerBuilder collects topics that should be exported via the
     // MQTT/REST APIs.
     // The topics are also used to pass around data inside the tacd.
@@ -108,9 +102,6 @@ async fn main() -> Result<(), std::io::Error> {
     // in the web interface.
     journal::serve(&mut http_server.server);
 
-    // Expose the display as a .png on the web server
-    ui::serve_display(&mut http_server.server, display.screenshooter());
-
     // Set up the user interface for the hardware display on the TAC.
     // The different screens receive updates via the topics provided in
     // the UiResources struct.
@@ -138,6 +129,18 @@ async fn main() -> Result<(), std::io::Error> {
     // and expose the topics via HTTP and MQTT-over-websocket.
     bb.build(&mut http_server.server);
 
+    Ok((ui, http_server, watchdog))
+}
+
+async fn run(
+    ui: Ui,
+    mut http_server: HttpServer,
+    watchdog: Option<Watchdog>,
+    display: Display,
+) -> Result<(), std::io::Error> {
+    // Expose the display as a .png on the web server
+    ui::serve_display(&mut http_server.server, display.screenshooter());
+
     log::info!("Setup complete. Handling requests");
 
     // Run until the user interface, http server or (if selected) the watchdog
@@ -154,4 +157,15 @@ async fn main() -> Result<(), std::io::Error> {
             wi_err = http_server.serve().fuse() => wi_err,
         }
     }
+}
+
+#[async_std::main]
+async fn main() -> Result<(), std::io::Error> {
+    env_logger::init();
+
+    // Show a splash screen very early on
+    let display = setup_display();
+
+    let (ui, http_server, watchdog) = init().await.unwrap();
+    run(ui, http_server, watchdog, display).await
 }
