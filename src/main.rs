@@ -15,7 +15,9 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+use async_std::future::pending;
 use futures::{select, FutureExt};
+use log::{error, info};
 
 mod adc;
 mod broker;
@@ -47,7 +49,7 @@ use regulators::Regulators;
 use setup_mode::SetupMode;
 use system::System;
 use temperatures::Temperatures;
-use ui::{setup_display, Display, Ui, UiResources};
+use ui::{message, setup_display, Display, Ui, UiResources};
 use usb_hub::UsbHub;
 use watchdog::Watchdog;
 
@@ -59,15 +61,14 @@ async fn init() -> anyhow::Result<(Ui, HttpServer, Option<Watchdog>)> {
 
     // Expose hardware on the TAC via the broker framework.
     let led = Led::new(&mut bb);
-    let adc = Adc::new(&mut bb).await.unwrap();
+    let adc = Adc::new(&mut bb).await?;
     let dut_pwr = DutPwrThread::new(
         &mut bb,
         adc.pwr_volt.clone(),
         adc.pwr_curr.clone(),
         led.dut_pwr.clone(),
     )
-    .await
-    .unwrap();
+    .await?;
     let dig_io = DigitalIo::new(&mut bb, led.out_0.clone(), led.out_1.clone());
     let regulators = Regulators::new(&mut bb);
     let temperatures = Temperatures::new(&mut bb);
@@ -141,7 +142,7 @@ async fn run(
     // Expose the display as a .png on the web server
     ui::serve_display(&mut http_server.server, display.screenshooter());
 
-    log::info!("Setup complete. Handling requests");
+    info!("Setup complete. Handling requests");
 
     // Run until the user interface, http server or (if selected) the watchdog
     // exits (with an error).
@@ -166,6 +167,24 @@ async fn main() -> Result<(), std::io::Error> {
     // Show a splash screen very early on
     let display = setup_display();
 
-    let (ui, http_server, watchdog) = init().await.unwrap();
-    run(ui, http_server, watchdog, display).await
+    match init().await {
+        Ok((ui, http_server, watchdog)) => run(ui, http_server, watchdog, display).await,
+        Err(e) => {
+            // Display a detailed error message on stderr (and thus the journal) ...
+            error!("Failed to initialize tacd: {e}");
+
+            // ... and a generic message on the LCD, as it can not fit a lot of detail.
+            display.clear();
+            display.with_lock(|target| {
+                message(
+                    target,
+                    "tacd failed to start.\nCheck log for info.\nWaiting for watchdog.",
+                );
+            });
+
+            // Wait forever (or more likely until the watchdog timer hits)
+            // to give the user a chance to actually see the error message.
+            pending().await
+        }
+    }
 }
