@@ -15,7 +15,9 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+use async_std::future::pending;
 use futures::{select, FutureExt};
+use log::{error, info};
 
 mod adc;
 mod backlight;
@@ -49,17 +51,11 @@ use regulators::Regulators;
 use setup_mode::SetupMode;
 use system::System;
 use temperatures::Temperatures;
-use ui::{setup_display, Ui, UiResources};
+use ui::{message, setup_display, Display, Ui, UiResources};
 use usb_hub::UsbHub;
 use watchdog::Watchdog;
 
-#[async_std::main]
-async fn main() -> Result<(), std::io::Error> {
-    env_logger::init();
-
-    // Show a splash screen very early on
-    let display = setup_display();
-
+async fn init() -> anyhow::Result<(Ui, HttpServer, Option<Watchdog>)> {
     // The BrokerBuilder collects topics that should be exported via the
     // MQTT/REST APIs.
     // The topics are also used to pass around data inside the tacd.
@@ -68,15 +64,14 @@ async fn main() -> Result<(), std::io::Error> {
     // Expose hardware on the TAC via the broker framework.
     let backlight = Backlight::new(&mut bb).unwrap();
     let led = Led::new(&mut bb);
-    let adc = Adc::new(&mut bb).await.unwrap();
+    let adc = Adc::new(&mut bb).await?;
     let dut_pwr = DutPwrThread::new(
         &mut bb,
         adc.pwr_volt.clone(),
         adc.pwr_curr.clone(),
         led.dut_pwr.clone(),
     )
-    .await
-    .unwrap();
+    .await?;
     let dig_io = DigitalIo::new(&mut bb, led.out_0.clone(), led.out_1.clone());
     let regulators = Regulators::new(&mut bb);
     let temperatures = Temperatures::new(&mut bb);
@@ -122,9 +117,6 @@ async fn main() -> Result<(), std::io::Error> {
     // in the web interface.
     journal::serve(&mut http_server.server);
 
-    // Expose the display as a .png on the web server
-    ui::serve_display(&mut http_server.server, display.screenshooter());
-
     // Set up the user interface for the hardware display on the TAC.
     // The different screens receive updates via the topics provided in
     // the UiResources struct.
@@ -153,7 +145,19 @@ async fn main() -> Result<(), std::io::Error> {
     // and expose the topics via HTTP and MQTT-over-websocket.
     bb.build(&mut http_server.server);
 
-    log::info!("Setup complete. Handling requests");
+    Ok((ui, http_server, watchdog))
+}
+
+async fn run(
+    ui: Ui,
+    mut http_server: HttpServer,
+    watchdog: Option<Watchdog>,
+    display: Display,
+) -> Result<(), std::io::Error> {
+    // Expose the display as a .png on the web server
+    ui::serve_display(&mut http_server.server, display.screenshooter());
+
+    info!("Setup complete. Handling requests");
 
     // Run until the user interface, http server or (if selected) the watchdog
     // exits (with an error).
@@ -167,6 +171,35 @@ async fn main() -> Result<(), std::io::Error> {
         select! {
             ui_err = ui.run(display).fuse() => ui_err,
             wi_err = http_server.serve().fuse() => wi_err,
+        }
+    }
+}
+
+#[async_std::main]
+async fn main() -> Result<(), std::io::Error> {
+    env_logger::init();
+
+    // Show a splash screen very early on
+    let display = setup_display();
+
+    match init().await {
+        Ok((ui, http_server, watchdog)) => run(ui, http_server, watchdog, display).await,
+        Err(e) => {
+            // Display a detailed error message on stderr (and thus the journal) ...
+            error!("Failed to initialize tacd: {e}");
+
+            // ... and a generic message on the LCD, as it can not fit a lot of detail.
+            display.clear();
+            display.with_lock(|target| {
+                message(
+                    target,
+                    "tacd failed to start.\nCheck log for info.\nWaiting for watchdog.",
+                );
+            });
+
+            // Wait forever (or more likely until the watchdog timer hits)
+            // to give the user a chance to actually see the error message.
+            pending().await
         }
     }
 }
