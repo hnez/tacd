@@ -64,7 +64,6 @@ const THREAD_INTERVAL: Duration = Duration::from_millis(100);
 const TASK_INTERVAL: Duration = Duration::from_millis(200);
 const MAX_CURRENT: f32 = 5.0;
 const MAX_VOLTAGE: f32 = 48.0;
-const MIN_VOLTAGE: f32 = -1.0;
 
 const PWR_LINE_ASSERTED: u8 = 0;
 const DISCHARGE_LINE_ASSERTED: u8 = 0;
@@ -412,20 +411,6 @@ impl DutPwrThread {
                     if volt > MAX_VOLTAGE {
                         turn_off_with_reason(
                             OutputState::OverVoltage,
-                            &pwr_line,
-                            &discharge_line,
-                            &state,
-                        );
-
-                        continue;
-                    }
-
-                    // Don't even look at the requests if there is an ongoin
-                    // polarity inversion. Turn off, go back to start, do not
-                    // collect $200.
-                    if volt < MIN_VOLTAGE {
-                        turn_off_with_reason(
-                            OutputState::InvertedPolarity,
                             &pwr_line,
                             &discharge_line,
                             &state,
