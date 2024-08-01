@@ -1,0 +1,84 @@
+name: build
+
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: '10 21 * * 4'
+
+jobs:
+  build:
+    name: build
+    runs-on: [self-hosted, forrest, build-packages]
+    if: ${{ vars.HAS_BUILD_RUNNER || github.repository == 'linux-automation/tacd' }}
+    steps:
+      - name: Set up runner machine
+        run: |
+          sudo localectl set-locale en_US.UTF-8
+          export DEBIAN_FRONTEND=noninteractive
+          export DPKG_FORCE=confnew
+          sudo -E apt-get update
+          sudo -E apt-get --assume-yes dist-upgrade
+          sudo -E apt-get --assume-yes install build-essential chrpath diffstat gawk git lz4
+
+      - name: Check out tacd
+        uses: actions/checkout@v4
+        with:
+          path: tacd
+
+      - name: Check out meta-lxatac
+        uses: actions/checkout@v4
+        with:
+          repository: 'linux-automation/meta-lxatac'
+          submodules: recursive
+          path: meta-lxatac
+
+      - name: Set up the build environment
+        run: |
+          TACD_SOURCE_DIR="$(readlink -f tacd)"
+
+          # We clone meta-lxatac and its submodules into a sub-directory to
+          # prevent the checkout action from deleting our build directory.
+          # Keeping the build directory gives us incremental builds,
+          # with all its benefits (speed) and drawbacks (reproducibility).
+
+          # oe-init-build-env implicitly cd-s into the build directory.
+          cd meta-lxatac
+          source oe-init-build-env ../build
+
+          # Save disk space by deleting a packages build directory once built.
+          echo 'INHERIT += "rm_work"' >> conf/local.conf
+
+          devtool modify --no-extract tacd "${TACD_SOURCE_DIR}"
+          devtool modify --no-extract tacd-webinterface "${TACD_SOURCE_DIR}"
+
+      - name: Build the tacd package
+        run: |
+          cd meta-lxatac
+          source oe-init-build-env ../build
+          bitbake tacd
+
+          mkdir -p ../packages
+          cp tmp/deploy/ipk/cortexa7t2hf-neon-vfpv4/tacd_*.ipk ../packages
+
+      - name: Build the tacd-webinterface package
+        run: |
+          cd meta-lxatac
+          source oe-init-build-env ../build
+          bitbake tacd-webinterface
+
+          cp tmp/deploy/ipk/cortexa7t2hf-neon-vfpv4/tacd-webinterface_*.ipk ../packages
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: packages
+
+      - name: Persist the disk image
+        env:
+          PERSISTENCE_TOKEN: ${{ secrets.PERSISTENCE_TOKEN }}
+        if: ${{ env.PERSISTENCE_TOKEN != ''  }}
+        run: |
+          rm -rf build/conf build/workspace packages
+          sudo fstrim /
+          echo "$PERSISTENCE_TOKEN" > ~/config/persist
