@@ -26,13 +26,15 @@ pub struct Timestamp(Instant);
 pub struct Measurement {
     pub ts: Timestamp,
     pub value: f32,
+    pub raw: Option<i32>,
 }
 
 impl Measurement {
-    pub fn now(value: f32) -> Self {
+    pub fn now(value: f32, raw: Option<i32>) -> Self {
         Self {
             ts: Timestamp::now(),
             value,
+            raw,
         }
     }
 }

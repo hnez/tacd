@@ -16,16 +16,19 @@
 
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use async_std::task::sleep;
 use log::{error, info};
 
-mod backlight;
+mod adc;
 mod broker;
+mod measurement;
+mod system;
 mod watched_tasks;
 
-use backlight::Backlight;
+use adc::Adc;
 use broker::BrokerBuilder;
+use system::HardwareGeneration;
 use watched_tasks::WatchedTasksBuilder;
 
 #[async_std::main]
@@ -42,20 +45,32 @@ async fn main() -> Result<()> {
     // The topics are also used to pass around data inside the tacd.
     let mut bb = BrokerBuilder::new();
 
-    let backlight = Backlight::new(&mut bb, &mut wtb)?;
+    let hardware_generation = HardwareGeneration::get()?;
+    let adc = Adc::new(&mut bb, &mut wtb, hardware_generation).await?;
 
-    wtb.spawn_task("blink-backlight", async move {
-        for _ in 0..10 {
-            println!("On");
-            backlight.brightness.set(1.0);
-            sleep(Duration::from_millis(500)).await;
+    wtb.spawn_task("print-adc", async move {
+        let mut start = None;
 
-            println!("Off");
-            backlight.brightness.set(0.0);
+        loop {
+            let meas = adc
+                .usb_host_curr
+                .fast
+                .get()
+                .map_err(|_| Error::msg("Adc Error"))?;
+
+            let ts = meas.ts.as_instant();
+
+            let ms_since_start = ts.duration_since(*start.get_or_insert(ts)).as_millis();
+
+            println!(
+                "{:10}ms | {:15}A | {:10}",
+                ms_since_start,
+                meas.value,
+                meas.raw.unwrap_or(0)
+            );
+
             sleep(Duration::from_millis(500)).await;
         }
-
-        Ok(())
     })?;
 
     wtb.watch().await
