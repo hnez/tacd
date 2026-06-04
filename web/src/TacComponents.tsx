@@ -392,7 +392,7 @@ export function UpdateChannels(props: UpdateChannelsProps) {
               return hours === 1 ? "Hourly" : `Every ${hours} Hours`;
             }
 
-            if (Math.floor(days) === days) {
+            if (Math.floor(minutes) === minutes) {
               return minutes === 1
                 ? "Once a minute"
                 : `Every ${minutes} Minutes`;
