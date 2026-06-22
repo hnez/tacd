@@ -21,6 +21,8 @@ pub enum ADCChannels {
     Out1Volt,
     IoBusVolt,
     IoBusCurr,
+    PwrVolt,
+    PwrCurr,
 }
 
 #[derive(Args, Debug)]
@@ -141,6 +143,8 @@ pub async fn collect_adc_samples(
                 ADCChannels::Out1Volt => &adc.out1_volt.fast,
                 ADCChannels::IoBusVolt => &adc.iobus_volt.fast,
                 ADCChannels::IoBusCurr => &adc.iobus_curr.fast,
+                ADCChannels::PwrVolt => &adc.pwr_volt.fast,
+                ADCChannels::PwrCurr => &adc.pwr_curr.fast,
             };
             let meas = adc_fn.get().map_err(|_| Error::msg("Adc Error"))?;
 
