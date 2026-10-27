@@ -124,7 +124,7 @@ pub struct Uname {
 }
 
 impl Uname {
-    fn get() -> Result<Self> {
+    pub fn get() -> Result<Self> {
         let uts = uname()?;
 
         fn to_string(val: &OsStr, name: &str) -> Result<String> {

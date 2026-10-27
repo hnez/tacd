@@ -20,12 +20,17 @@ use anyhow::{Result, anyhow, bail};
 use clap::{Args, Subcommand};
 
 use crate::auth::{Capability, Token, TokenStore};
+use crate::system::Uname;
 
 #[derive(Args, Debug, Clone)]
 pub struct GenerateArgs {
     /// Time after which the token will expire, like 30s, 15m, 1h, 1d or 1y
     #[arg(long, default_value = "1d")]
     validity: String,
+
+    /// Print a cURL command line to the web interface instead of the bare token
+    #[arg(long)]
+    curl: bool,
 
     /// Read capabilities to give to this new token
     #[arg(long, value_enum, value_delimiter = ',')]
@@ -88,7 +93,12 @@ fn generate(args: GenerateArgs) -> Result<()> {
     let store = TokenStore::open()?;
     let token_str = store.encrypt(&token);
 
-    println!("{token_str}");
+    if args.curl {
+        let hostname = Uname::get().unwrap().nodename;
+        println!("curl -H 'Authorization: Bearer {token_str}' http://{hostname}/");
+    } else {
+        println!("{token_str}");
+    }
 
     Ok(())
 }
