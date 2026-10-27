@@ -18,6 +18,7 @@ use anyhow::Result;
 use clap::{self, Parser};
 
 mod adc;
+mod auth;
 mod backlight;
 mod broker;
 mod daemon;
