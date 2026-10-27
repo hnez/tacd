@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License along
 // with this library; if not, see <https://www.gnu.org/licenses/>.
 
+use std::time::SystemTime;
+
 use crate::auth::TokenStore;
 
 use tide::{Middleware, Next, Request};
@@ -48,6 +50,19 @@ impl TokenMiddleware {
 #[tide::utils::async_trait]
 impl<State: Clone + Send + Sync + 'static> Middleware<State> for TokenMiddleware {
     async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide::Result {
+        let now = SystemTime::now();
+
+        let auth_param = req.param("token").ok();
+        let auth_header = get_exactly_one_header(&req, "Authorization");
+
+        // Do not allow ambiguity. Respect either the header, or the query parameter.
+        let token_req = auth_param
+            .xor(auth_header)
+            .and_then(|auth| auth.strip_prefix("Bearer "))
+            .and_then(|bearer| self.token_store.decrypt(bearer).ok())
+            .and_then(|token| (now < token.expires).then_some(token));
+
+        // Generate a fallback token in case none was sent by the client or it expired.
         // Browsers send an `Origin` or `Referer` header while other API users do not.
         // Use that to apply different rules for them.
         let has_origin = has_header(&req, "Origin");
@@ -59,7 +74,11 @@ impl<State: Clone + Send + Sync + 'static> Middleware<State> for TokenMiddleware
         let sec_fetch_site_header = get_exactly_one_header(&req, "Sec-Fetch-Site");
         let is_same_origin = sec_fetch_site_header == Some("same-origin");
 
-        req.set_ext(self.token_store.fallback_token(is_browser, is_same_origin));
+        let token_fallback = self.token_store.fallback_token(is_browser, is_same_origin);
+
+        let token = token_req.unwrap_or(token_fallback);
+
+        req.set_ext(token);
 
         Ok(next.run(req).await)
     }
