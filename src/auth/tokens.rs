@@ -17,15 +17,18 @@
 use std::time::{Duration, SystemTime};
 
 use super::CapabilitySet;
+use serde::Serialize;
 
 mod utils;
 use utils::*;
 
 const FALLBACK_VALIDITY: Duration = Duration::from_mins(15);
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize)]
 pub struct Token {
+    #[serde(serialize_with = "serialize_system_time")]
     pub generated: SystemTime,
+    #[serde(serialize_with = "serialize_system_time")]
     pub expires: SystemTime,
     pub capabilities_read: CapabilitySet,
     pub capabilities_write: CapabilitySet,

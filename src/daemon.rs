@@ -118,6 +118,9 @@ async fn init(screenshooter: ScreenShooter) -> Result<(Ui, WatchedTasksBuilder)>
     // interface and config files that may be edited inside the web ui.
     let mut http_server = HttpServer::new(token_store);
 
+    // Let the client query information about the token they are using.
+    crate::auth::api::serve(&mut http_server.server);
+
     // Allow editing some aspects of the TAC configuration when in "setup mode".
     let setup_mode = SetupMode::new(&mut bb, &mut wtb, &mut http_server.server)?;
 

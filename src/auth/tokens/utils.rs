@@ -16,6 +16,8 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::{Serialize, Serializer};
+
 pub(super) fn to_unix_ts(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH).unwrap().as_secs()
 }
@@ -26,4 +28,12 @@ pub(super) fn from_unix_ts(ts: u64) -> SystemTime {
 
 pub(super) fn whole_second(time: SystemTime) -> SystemTime {
     from_unix_ts(to_unix_ts(time))
+}
+
+pub(super) fn serialize_system_time<S: Serializer>(
+    time: &SystemTime,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    let javascript_ts = to_unix_ts(*time) * 1000;
+    javascript_ts.serialize(ser)
 }

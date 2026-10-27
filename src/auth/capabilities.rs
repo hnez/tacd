@@ -14,7 +14,10 @@
 // You should have received a copy of the GNU General Public License along
 // with this library; if not, see <https://www.gnu.org/licenses/>.
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+use serde::Serialize;
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Serialize)]
+#[serde(into = "CapabilitySetSer")]
 pub struct CapabilitySet(u16);
 
 #[derive(Clone, Copy, Debug)]
@@ -48,5 +51,28 @@ impl CapabilitySet {
 
     pub fn set_all(&mut self) {
         self.0 = 0xffff;
+    }
+}
+
+#[derive(Serialize)]
+struct CapabilitySetSer {
+    tac_system: bool,
+    dut_power: bool,
+    outputs: bool,
+    uart: bool,
+    usb: bool,
+    iobus: bool,
+}
+
+impl From<CapabilitySet> for CapabilitySetSer {
+    fn from(set: CapabilitySet) -> Self {
+        Self {
+            tac_system: set.is_set(Capability::TacSystem),
+            dut_power: set.is_set(Capability::DutPower),
+            outputs: set.is_set(Capability::Outputs),
+            uart: set.is_set(Capability::Uart),
+            usb: set.is_set(Capability::Usb),
+            iobus: set.is_set(Capability::IoBus),
+        }
     }
 }
