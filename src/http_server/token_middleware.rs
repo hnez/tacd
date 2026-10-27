@@ -22,6 +22,23 @@ pub struct TokenMiddleware {
     token_store: TokenStore,
 }
 
+fn get_exactly_one_header<'a, R>(req: &'a Request<R>, name: &str) -> Option<&'a str> {
+    let mut values = req.header(name)?.iter();
+    let value = values.next()?;
+
+    if values.next().is_some() {
+        // There is a second header.
+        // We can not decide which one is valid, so decide against both.
+        return None;
+    }
+
+    Some(value.as_str())
+}
+
+fn has_header<R>(req: &Request<R>, name: &str) -> bool {
+    req.header(name).is_some()
+}
+
 impl TokenMiddleware {
     pub fn new(token_store: TokenStore) -> Self {
         Self { token_store }
@@ -31,7 +48,18 @@ impl TokenMiddleware {
 #[tide::utils::async_trait]
 impl<State: Clone + Send + Sync + 'static> Middleware<State> for TokenMiddleware {
     async fn handle(&self, mut req: Request<State>, next: Next<'_, State>) -> tide::Result {
-        req.set_ext(self.token_store.fallback_token());
+        // Browsers send an `Origin` or `Referer` header while other API users do not.
+        // Use that to apply different rules for them.
+        let has_origin = has_header(&req, "Origin");
+        let has_referer = has_header(&req, "Referer");
+        let is_browser = has_origin || has_referer;
+
+        // Check if the browser sent CSRF protection headers and treat the request
+        // differently if they did.
+        let sec_fetch_site_header = get_exactly_one_header(&req, "Sec-Fetch-Site");
+        let is_same_origin = sec_fetch_site_header == Some("same-origin");
+
+        req.set_ext(self.token_store.fallback_token(is_browser, is_same_origin));
 
         Ok(next.run(req).await)
     }

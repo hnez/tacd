@@ -51,12 +51,16 @@ impl TokenStore {
         Ok(Self {})
     }
 
-    pub fn fallback_token(&self) -> Token {
+    pub fn fallback_token(&self, is_browser: bool, is_same_origin: bool) -> Token {
         let mut token = Token::new(FALLBACK_VALIDITY);
 
-        // Mimic the previous behaviour by giving everyone all capabilities.
-        token.capabilities_read.set_all();
-        token.capabilities_write.set_all();
+        if !is_browser || is_same_origin {
+            // Set all capabilities for requests that do not come from a browser,
+            // or for requests that come from a browser but have the CSRF headers
+            // set correctly.
+            token.capabilities_read.set_all();
+            token.capabilities_write.set_all();
+        }
 
         token
     }
