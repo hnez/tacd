@@ -37,6 +37,7 @@ mod selftest;
 mod setup_mode;
 mod system;
 mod temperatures;
+mod token_cli;
 mod ui;
 mod usb_hub;
 mod watchdog;
@@ -60,6 +61,11 @@ enum CliCommands {
         #[command(subcommand)]
         tests: selftest::Commands,
     },
+    /// Helper to manage authentication tokens
+    Token {
+        #[command(subcommand)]
+        token: token_cli::Commands,
+    },
 }
 
 #[async_std::main]
@@ -70,5 +76,6 @@ async fn main() -> Result<()> {
     match cli.command.unwrap_or(CliCommands::Daemon) {
         CliCommands::Daemon => daemon::daemon().await,
         CliCommands::Selftest { tests } => selftest::selftests(tests).await,
+        CliCommands::Token { token } => token_cli::token_cli(token),
     }
 }

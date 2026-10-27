@@ -14,13 +14,14 @@
 // You should have received a copy of the GNU General Public License along
 // with this library; if not, see <https://www.gnu.org/licenses/>.
 
+use clap::ValueEnum;
 use serde::Serialize;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Serialize)]
 #[serde(into = "CapabilitySetSer")]
 pub struct CapabilitySet(u16);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Capability {
     TacSystem = 0,
     DutPower = 1,
@@ -45,8 +46,16 @@ impl CapabilitySet {
         Self(bits)
     }
 
+    pub fn bits(&self) -> u16 {
+        self.0
+    }
+
     pub fn is_set(&self, cap: Capability) -> bool {
         (self.0 & cap.mask()) != 0
+    }
+
+    pub fn set(&mut self, cap: Capability) {
+        self.0 |= cap.mask();
     }
 
     pub fn set_all(&mut self) {

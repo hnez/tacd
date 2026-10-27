@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License along
 // with this library; if not, see <https://www.gnu.org/licenses/>.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Serialize, Serializer};
@@ -78,4 +78,20 @@ pub(super) fn read_eof<R: Read>(reader: &mut R) -> Result<(), DeserializationErr
         Ok(_) => Err(DeserializationError::UnusedBytes),
         Err(_) => Ok(()),
     }
+}
+
+pub(super) fn write_u8<W: Write>(writer: &mut W, val: u8) {
+    writer.write_all(&[val]).unwrap();
+}
+
+pub(super) fn write_u16<W: Write>(writer: &mut W, val: u16) {
+    writer.write_all(&val.to_be_bytes()).unwrap();
+}
+
+pub(super) fn write_u32<W: Write>(writer: &mut W, val: u32) {
+    writer.write_all(&val.to_be_bytes()).unwrap();
+}
+
+pub(super) fn write_u64<W: Write>(writer: &mut W, val: u64) {
+    writer.write_all(&val.to_be_bytes()).unwrap();
 }

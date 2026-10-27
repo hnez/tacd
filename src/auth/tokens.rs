@@ -22,7 +22,7 @@ use std::time::{Duration, SystemTime};
 
 use super::CapabilitySet;
 use aes_gcm::{
-    Aes256Gcm,
+    Aes256Gcm, Nonce,
     aead::{Aead, Generate, Key, KeyInit},
 };
 use base64::Engine;
@@ -121,6 +121,26 @@ impl Token {
         }
     }
 
+    fn serialize(&self) -> Vec<u8> {
+        let mut dst = Vec::new();
+
+        let generated_ts = to_unix_ts(self.generated);
+        let validity_in_seconds = self
+            .expires
+            .duration_since(self.generated)
+            .unwrap()
+            .as_secs()
+            .min(u32::MAX as u64) as u32;
+
+        write_u8(&mut dst, 1); // version
+        write_u64(&mut dst, generated_ts);
+        write_u32(&mut dst, validity_in_seconds);
+        write_u16(&mut dst, self.capabilities_read.bits());
+        write_u16(&mut dst, self.capabilities_write.bits());
+
+        dst
+    }
+
     fn deserialize(buf: &[u8]) -> Result<Token, DeserializationError> {
         let mut src = Cursor::new(buf);
 
@@ -174,6 +194,18 @@ impl TokenStore {
         token
     }
 
+    pub fn encrypt(&self, token: &Token) -> String {
+        let plaintext = token.serialize();
+
+        let nonce = Nonce::generate();
+        let mut ciphertext = self.cipher.encrypt(&nonce, plaintext.as_slice()).unwrap();
+
+        // Prepend nonce to the ciphertext
+        ciphertext.splice(0..0, nonce.iter().copied());
+
+        base64::engine::general_purpose::URL_SAFE.encode(&ciphertext)
+    }
+
     pub fn decrypt(&self, data: &str) -> Result<Token, DeserializationError> {
         let nonce_and_ciphertext = base64::engine::general_purpose::URL_SAFE
             .decode(data)
@@ -201,6 +233,19 @@ impl TokenStore {
 mod tests {
     use super::*;
 
+    fn gen_token() -> Token {
+        Token::new(Duration::from_mins(15))
+    }
+
+    #[test]
+    fn token_to_wire_and_back_roundtrip() {
+        let token = gen_token();
+
+        let roundtripped = Token::deserialize(&token.serialize()).unwrap();
+
+        assert_eq!(roundtripped, token);
+    }
+
     #[test]
     fn store_deserialize_rejects_garbage_base64() {
         let store = TokenStore::open().unwrap();
@@ -218,5 +263,46 @@ mod tests {
             store.decrypt(&data),
             Err(DeserializationError::TooFewBytes)
         ));
+    }
+
+    #[test]
+    fn store_deserialize_rejects_wrong_key() {
+        let store = TokenStore::open().unwrap();
+        let other_store = TokenStore::open().unwrap();
+        let token = gen_token();
+
+        assert!(matches!(
+            other_store.decrypt(&store.encrypt(&token)),
+            Err(DeserializationError::Aead(_))
+        ));
+    }
+
+    #[test]
+    fn store_deserialize_rejects_tampered_ciphertext() {
+        let store = TokenStore::open().unwrap();
+        let token = gen_token();
+
+        let data = store.encrypt(&token);
+        let mut bytes = base64::engine::general_purpose::URL_SAFE
+            .decode(&data)
+            .unwrap();
+        bytes[12] ^= 0xff; // flip a bit in the ciphertext, not the nonce
+        let tampered = base64::engine::general_purpose::URL_SAFE.encode(&bytes);
+
+        assert!(matches!(
+            store.decrypt(&tampered),
+            Err(DeserializationError::Aead(_))
+        ));
+    }
+
+    #[test]
+    fn token_to_serialize_and_back_roundtrip() {
+        let store = TokenStore::open().unwrap();
+        let token = gen_token();
+
+        let serialized = store.encrypt(&token);
+        let roundtripped = store.decrypt(&serialized).unwrap();
+
+        assert_eq!(roundtripped, token);
     }
 }
